@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: vortex-backend
+    runtime: node
+    rootDir: apps/server
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: REDIS_HOST
+        sync: false
+      - key: REDIS_PORT
+        value: 6379
+      - key: REDIS_USER
+        value: default
+      - key: REDIS_PASSWORD
+        sync: false
+      - key: KAFKA_BROKER
+        sync: false
+      - key: KAFKA_USER
+        value: avnadmin
+      - key: KAFKA_PASSWORD
+        sync: false
+      - key: KAFKA_CA_CERT
+        sync: false
+      - key: DATABASE_URL
+        sync: false

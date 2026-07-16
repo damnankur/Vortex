@@ -41,7 +41,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   }, []);
 
   useEffect(() => {
-    const _socket = io("http://localhost:5000");
+    const _socket = io(process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:5000");
     _socket.on("message", onMessageRec);
 
     setSocket(_socket);

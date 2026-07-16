@@ -4,10 +4,15 @@ import path from 'path';
 import { log } from "console";
 import prismaClient from "./prisma";
 
+const caCert = process.env.KAFKA_CA_CERT
+    || (fs.existsSync(path.resolve("./ca.pem"))
+        ? fs.readFileSync(path.resolve("./ca.pem"), "utf-8")
+        : "");
+
 const kafka = new Kafka({
     brokers: [process.env.KAFKA_BROKER || 'localhost:9092'],
     ssl: {
-        ca: [fs.readFileSync(path.resolve("./ca.pem"), "utf-8" )],
+        ca: [caCert],
     },
     sasl: {
         username: process.env.KAFKA_USER || 'avnadmin',
