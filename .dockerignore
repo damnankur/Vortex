@@ -1,0 +1,23 @@
+# Keep the build context small and, crucially, stop host node_modules/dist
+# from being copied over the freshly installed tree in apps/server/Dockerfile.
+**/node_modules
+**/dist
+**/.next
+**/out
+**/build
+**/.turbo
+
+.git
+.github
+.vercel
+.vscode
+.idea
+
+.env
+.env.*
+!.env.example
+
+*.log
+npm-debug.log*
+coverage
+.DS_Store

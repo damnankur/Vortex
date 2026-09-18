@@ -4,23 +4,33 @@ import { useSocket } from "../context/SocketProvider";
 import classes from "./page.module.css";
 
 export default function Page() {
-  const { sendMessage, messages, connected } = useSocket();
+  const { join, sendMessage, messages, connected, joined, currentUser, error } = useSocket();
   const [message, setMessage] = useState("");
   const [username, setUsername] = useState("");
-  const [joined, setJoined] = useState(false);
+  const [joining, setJoining] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const handleJoin = () => {
-    if (username.trim()) setJoined(true);
+  const handleJoin = async () => {
+    if (!username.trim() || joining) return;
+    setJoining(true);
+    setJoinError(null);
+    try {
+      await join(username.trim());
+    } catch (err) {
+      setJoinError(err instanceof Error ? err.message : "join failed");
+    } finally {
+      setJoining(false);
+    }
   };
 
   const handleSend = () => {
     if (message.trim() && connected) {
-      sendMessage(JSON.stringify({ user: username, text: message }));
+      sendMessage(message.trim());
       setMessage("");
     }
   };
@@ -33,14 +43,8 @@ export default function Page() {
     }
   };
 
-  const parseMsg = (raw: string) => {
-    try {
-      const parsed = JSON.parse(raw);
-      return { user: parsed.user || "anon", text: parsed.text || raw };
-    } catch {
-      return { user: "anon", text: raw };
-    }
-  };
+  const formatTime = (iso: string) =>
+    new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
   if (!joined) {
     return (
@@ -56,13 +60,19 @@ export default function Page() {
             onKeyDown={handleKeyDown}
             autoFocus
             maxLength={20}
+            aria-label="Your name"
           />
+          {(joinError || error) && (
+            <div className={classes.errorText} role="alert">
+              {joinError || error}
+            </div>
+          )}
           <button
             className={classes.usernameBtn}
             onClick={handleJoin}
-            disabled={!username.trim()}
+            disabled={!username.trim() || joining}
           >
-            Join Chat
+            {joining ? "Joining..." : "Join Chat"}
           </button>
         </div>
       </div>
@@ -79,24 +89,23 @@ export default function Page() {
         </div>
       </div>
 
-      <div className={classes.messages}>
+      <div className={classes.messages} role="log" aria-live="polite" aria-label="Chat messages">
         {messages.length === 0 ? (
           <div className={classes.emptyState}>
             <div className={classes.emptyIcon}>~</div>
             <div className={classes.emptyText}>No messages yet. Say hello!</div>
           </div>
         ) : (
-          messages.map((msg, i) => {
-            const parsed = parseMsg(msg.text);
-            const isOwn = parsed.user === username;
+          messages.map((msg) => {
+            const isOwn = msg.userId === currentUser?.id;
             return (
               <div
-                key={i}
+                key={msg.messageId}
                 className={`${classes.message} ${isOwn ? classes.messageOwn : classes.messageOther}`}
               >
-                {!isOwn && <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 2, opacity: 0.7 }}>{parsed.user}</div>}
-                {parsed.text}
-                <div className={classes.messageTime}>{msg.time}</div>
+                {!isOwn && <div className={classes.messageUser}>{msg.username || "anon"}</div>}
+                {msg.text}
+                <div className={classes.messageTime}>{formatTime(msg.createdAt)}</div>
               </div>
             );
           })
@@ -113,6 +122,8 @@ export default function Page() {
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={handleKeyDown}
             disabled={!connected}
+            maxLength={2000}
+            aria-label="Message"
           />
           <button
             className={classes.sendBtn}

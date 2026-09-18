@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    name: typecheck, build & lint
+    runs-on: ubuntu-latest
+    env:
+      # `prisma generate` runs from the server workspace's postinstall (triggered by `npm ci`)
+      # and again inside the server build script. It needs the datasource URL to be resolvable
+      # but never opens a connection, so a dummy CI value is enough.
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/vortex
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck server
+        run: npm run typecheck --workspace=server
+
+      - name: Build server
+        run: npm run build --workspace=server
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/vortex
+
+      - name: Lint web
+        run: npm run lint --workspace=web
+
+      - name: Build web
+        run: npm run build --workspace=web

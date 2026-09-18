@@ -3,9 +3,20 @@ services:
     name: vortex-backend
     runtime: node
     rootDir: apps/server
-    buildCommand: npm install && npm run build
+    buildCommand: npm ci && npm run build
     startCommand: npm start
+    healthCheckPath: /healthz
     envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      # Must be a random 32+ char value; the server refuses to boot otherwise.
+      - key: JWT_SECRET
+        sync: false
+      # Comma-separated browser origins allowed by CORS, e.g. https://vortex.example.com
+      - key: CORS_ORIGINS
+        sync: false
       - key: REDIS_HOST
         sync: false
       - key: REDIS_PORT
