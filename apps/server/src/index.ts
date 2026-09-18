@@ -1,15 +1,24 @@
-import { env } from "./env";
+import { env, channelSlugs } from "./env";
 import { createApp } from "./app";
 import { startMessageConsumer, disconnectProducer } from "./services/kafka";
 import prisma from "./services/prisma";
 import { logger } from "./lib/logger";
 
+function channelName(slug: string): string {
+  return slug
+    .split("-")
+    .map((part) => (part ? part[0].toUpperCase() + part.slice(1) : part))
+    .join(" ");
+}
+
 async function main() {
-  await prisma.room.upsert({
-    where: { slug: env.DEFAULT_ROOM_SLUG },
-    create: { slug: env.DEFAULT_ROOM_SLUG, name: "General" },
-    update: {},
-  });
+  for (const slug of channelSlugs) {
+    await prisma.room.upsert({
+      where: { slug },
+      create: { slug, name: channelName(slug) },
+      update: {},
+    });
+  }
 
   const consumer = await startMessageConsumer();
   const { httpServer, socketService } = await createApp();

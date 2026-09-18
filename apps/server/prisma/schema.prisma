@@ -55,12 +55,12 @@ model Message {
   messageId String    @unique
   text      String    @db.VarChar(2000)
   userId    String?
-  roomId    String
+  roomId    String    @db.VarChar(50)
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
   user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
-  room      Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  room      Room      @relation(fields: [roomId], references: [slug], onDelete: Cascade)
 
   @@index([roomId, createdAt])
   @@index([userId, createdAt])

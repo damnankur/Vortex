@@ -1,0 +1,148 @@
+'use strict';
+
+// Personas powering the Vortex demo simulator. Each bot lives in a "home"
+// channel and draws from its own message pool so the feed feels organic.
+// Usernames must be unique and <= 20 chars (server /auth/join contract).
+
+module.exports = [
+  {
+    username: 'OrionPrime',
+    room: 'tech',
+    messages: [
+      'Just tried the new terminal multiplexer, game changer.',
+      'Hot take: Rust borrow checker is not that hard once it clicks.',
+      'Anyone else running a homelab? 4-core ARM board and a Pi do the whole job.',
+      'Docker compose is now my entire mental model of the internet.',
+      'protip: add a healthcheck to every service or you WILL regret it.',
+      'The latency here is suspiciously good. Vibe check passed.',
+      'Migrated my API to streaming responses today. Feels illegal.',
+      'If your deploy has secrets in git, we need to talk.',
+    ],
+  },
+  {
+    username: 'PixelParker',
+    room: 'tech',
+    messages: [
+      'chasing down a flaky test, pray for me',
+      'CSS is fine. CSS is fine. CSS is fine.',
+      'The detail sphere just unblocked a 3 hour issue with one log line.',
+      'Never trust a benchmark you ran on your laptop.',
+      'Wrote a regex this morning. It exists in my nightmares now.',
+      'Cache invalidation is still the only hard problem in CS.',
+      'Pair programming with a rubber duck > any ticket bot.',
+      'Deploy Friday? Bold move, cotton.',
+    ],
+  },
+  {
+    username: 'NovaWolfe',
+    room: 'gaming',
+    messages: [
+      'gg that was a proper brawl, rematch when?',
+      'One more match. Just one. (it is never just one)',
+      'Still can\'t beat that boss on nightmare, any tips?',
+      'New patch notes dropped, buffs everywhere I love it',
+      'Speedrunners are from another dimension, I\'m convinced.',
+      'Matchmaking tonight, first timers welcome',
+      'Reached diamond! Pinch me.',
+      'That lag spike cost me the ranked game. Typical.',
+    ],
+  },
+  {
+    username: 'DracoRex',
+    room: 'gaming',
+    messages: [
+      'Anyone up for co-op tonight?',
+      'PVP meta shifted hard after the update',
+      'Found a hidden area nobody knows about. Yet.',
+      'My inventory is 95% spare potions, send help.',
+      'Boss fight strategies thread: post your builds',
+      'Achievement unlocked: fell into the same lava pit twice.',
+      'Community tournament this weekend, signups open',
+      'Controller or keyboard? (wrong answers only)',
+    ],
+  },
+  {
+    username: 'LunaWave',
+    room: 'music',
+    messages: [
+      'New ambient album + rainy day = perfect loop',
+      'That synthwave playlist is carrying my whole week',
+      'Live set last night was unreal, the crowd was electric',
+      'Current favorite track: anything with a good bassline honestly',
+      'Production tip: reference mixes on headphones AND speakers',
+      'Lo-fi beats to deploy to, volume max',
+      'Making a playlist for the grind, drop your tracks',
+      'Vinyl guy checking in. Analogue warmth forever.',
+    ],
+  },
+  {
+    username: 'AnalogKid',
+    room: 'music',
+    messages: [
+      'Nobody:  me: *turning a knob by one tiny degree*',
+      'That drum machine is 40 years old and still slaps',
+      'Mastering is 10% science and 90% belief',
+      'Radio edit or extended mix? Extended. Always extended.',
+      'The snare sounds like a clap. I love it. No context.',
+      'Working on a remix, will share when it\'s not embarrassing',
+      'Equalizer: the great social divide',
+      'Music discovery > music charts, change my mind',
+    ],
+  },
+  {
+    username: 'CedarMoss',
+    room: 'general',
+    messages: [
+      'Morning everyone, coffee is brewed and the day is young',
+      'Just finished a great book, happy to lend it out',
+      'The sunset here is unreal right now',
+      'Anyone else feel like Mondays are optional?',
+      'Brought snacks to the hangout. No, you can\'t has. Okay yes.',
+      'Random question: window seat or aisle?',
+      'Small wins count too. Conquered the inbox today.',
+      'If you need a crash course in \"how to adult\", I\'m in.',
+    ],
+  },
+  {
+    username: 'SamwiseG',
+    room: 'general',
+    messages: [
+      'I come home, and I smell the fresh chat. Good stuff.',
+      'The kettle\'s on. Tea for everyone.',
+      'Someone left a very nice comment in the docs. Nice.',
+      'Weather\'s turning nice. Weekend plans, anyone?',
+      'Just learned a new recipe. Kitchen experiment mode engaged.',
+      'There is no wrong way to eat a sandwich. Discuss.',
+      'Gardening update: fourth sprout made it!',
+      'Today is a good day. That is all.',
+    ],
+  },
+  {
+    username: 'TheWizard',
+    room: 'watercooler',
+    messages: [
+      'The microwave timer hit 0 at my exact finish line. Blessed.',
+      'Fridge at work mysteriously full. I ask no questions.',
+      'Best nap length is 17 minutes. Scientifically. Probably.',
+      'Plant on my desk judged me for snoozing. Fair.',
+      'The elevator music was actually a banger today',
+      'Who pranked the printer with a angry sticky note? Iconic.',
+      'Coffee machine learned my order. We\'re basically friends now.',
+      'Office cat update: he conquered the sunbeam. Again.',
+    ],
+  },
+  {
+    username: 'KiwiToast',
+    room: 'watercooler',
+    messages: [
+      'Broke a personal record for shortest meeting ever. Proud.',
+      'Is it just me or does 3pm hit like a truck',
+      'Half the office is fueled by sheer spite and iced coffee',
+      'Found a decade-old sticker in the drawer. Museum-worthy.',
+      'The good snacks are gone. We riot at noon.',
+      'Thermostat wars are the true workplace sport',
+      'Presented two slides and got a standing ovation. Mildly absurd.',
+      'Overtime snack run, who\'s in?',
+    ],
+  },
+];

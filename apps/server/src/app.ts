@@ -66,6 +66,20 @@ export async function createApp() {
     }
   });
 
+  app.get("/channels", authRequired, async (_req, res) => {
+    try {
+      const channels = await prisma.room.findMany({
+        where: { type: "CHANNEL" },
+        orderBy: { name: "asc" },
+        select: { slug: true, name: true, type: true },
+      });
+      res.json({ channels });
+    } catch (err) {
+      logger.error({ err }, "fetch channels failed");
+      res.status(500).json({ error: "failed to load channels" });
+    }
+  });
+
   app.get("/messages", authRequired, async (req, res) => {
     const roomId =
       typeof req.query.roomId === "string" ? req.query.roomId : env.DEFAULT_ROOM_SLUG;

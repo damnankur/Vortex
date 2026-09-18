@@ -6,3 +6,16 @@ export interface ChatMessage {
   text: string;
   createdAt: string;
 }
+
+export interface PresenceUser {
+  userId: string;
+  username: string;
+  connectedAt: string;
+}
+
+export interface TypingEvent {
+  userId: string;
+  username: string;
+  roomId: string;
+  typing: boolean;
+}

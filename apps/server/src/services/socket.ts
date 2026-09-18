@@ -2,12 +2,12 @@ import { Server, Socket } from "socket.io";
 import Redis from "ioredis";
 import { createAdapter } from "@socket.io/redis-adapter";
 import { z } from "zod";
-import { env } from "../env";
+import { env, isKnownChannel } from "../env";
 import { verifyToken } from "../lib/auth";
 import { produceMessage } from "./kafka";
 import { logger } from "../lib/logger";
 import { messagesSent, socketConnections } from "../lib/metrics";
-import type { ChatMessage } from "../types";
+import type { ChatMessage, PresenceUser } from "../types";
 
 const publisher = new Redis({
   host: env.REDIS_HOST,
@@ -27,6 +27,10 @@ const messageSchema = z.object({
   text: z.string().trim().min(1).max(env.MESSAGE_MAX_LENGTH),
 });
 
+const joinSchema = z.object({
+  slug: z.string().trim().min(1).max(50),
+});
+
 const rateBuckets = new Map<string, { count: number; resetAt: number }>();
 
 function isRateLimited(socketId: string): boolean {
@@ -42,6 +46,8 @@ function isRateLimited(socketId: string): boolean {
 
 export class SocketService {
   private _io: Server;
+  private onlineUsers = new Map<string, PresenceUser>();
+  private typingSentAt = new Map<string, number>();
 
   constructor() {
     this._io = new Server({
@@ -70,6 +76,27 @@ export class SocketService {
     });
   }
 
+  private roster(): PresenceUser[] {
+    return Array.from(this.onlineUsers.values()).sort((a, b) =>
+      a.username.localeCompare(b.username)
+    );
+  }
+
+  private broadcastPresence(roomId: string) {
+    this._io.to(roomId).emit("presence", { roomId, users: this.roster() });
+  }
+
+  private addPresence(user: { userId: string; username: string }) {
+    this.onlineUsers.set(user.userId, {
+      ...user,
+      connectedAt: new Date().toISOString(),
+    });
+  }
+
+  private removePresence(userId: string) {
+    this.onlineUsers.delete(userId);
+  }
+
   public socketListeners() {
     const io = this._io;
 
@@ -78,6 +105,25 @@ export class SocketService {
 
       socketConnections.inc();
       socket.join(env.DEFAULT_ROOM_SLUG);
+      socket.data.roomId = env.DEFAULT_ROOM_SLUG;
+      this.addPresence(user);
+      this.broadcastPresence(env.DEFAULT_ROOM_SLUG);
+
+      socket.on("channel:join", (payload: unknown) => {
+        const parsed = joinSchema.safeParse(payload);
+        if (!parsed.success) return;
+        const slug = parsed.data.slug;
+        if (!isKnownChannel(slug)) return;
+
+        const previous = (socket.data.roomId as string) || env.DEFAULT_ROOM_SLUG;
+        if (slug === previous) return;
+
+        socket.leave(previous);
+        socket.join(slug);
+        socket.data.roomId = slug;
+        this.broadcastPresence(previous);
+        this.broadcastPresence(slug);
+      });
 
       socket.on("event: message", async (payload: unknown) => {
         const parsed = messageSchema.safeParse(payload);
@@ -88,9 +134,10 @@ export class SocketService {
           return;
         }
 
+        const roomId = (socket.data.roomId as string) || env.DEFAULT_ROOM_SLUG;
         const message: ChatMessage = {
           messageId: parsed.data.messageId,
-          roomId: env.DEFAULT_ROOM_SLUG,
+          roomId,
           userId: user.userId,
           username: user.username,
           text: parsed.data.text,
@@ -106,12 +153,40 @@ export class SocketService {
         }
 
         messagesSent.inc();
-        io.to(env.DEFAULT_ROOM_SLUG).emit("message", envelope);
+        io.to(roomId).emit("message", envelope);
+      });
+
+      socket.on("typing:start", () => {
+        const roomId = (socket.data.roomId as string) || env.DEFAULT_ROOM_SLUG;
+        const key = `${roomId}:${user.userId}`;
+        const now = Date.now();
+        const last = this.typingSentAt.get(key) ?? 0;
+        if (now - last < env.TYPING_THROTTLE_MS) return;
+        this.typingSentAt.set(key, now);
+        io.to(roomId).emit("typing", {
+          userId: user.userId,
+          username: user.username,
+          roomId,
+          typing: true,
+        });
+      });
+
+      socket.on("typing:stop", () => {
+        const roomId = (socket.data.roomId as string) || env.DEFAULT_ROOM_SLUG;
+        io.to(roomId).emit("typing", {
+          userId: user.userId,
+          username: user.username,
+          roomId,
+          typing: false,
+        });
       });
 
       socket.on("disconnect", () => {
         socketConnections.dec();
         rateBuckets.delete(socket.id);
+        const roomId = (socket.data.roomId as string) || env.DEFAULT_ROOM_SLUG;
+        this.removePresence(user.userId);
+        this.broadcastPresence(roomId);
       });
     });
   }

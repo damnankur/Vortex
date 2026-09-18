@@ -24,7 +24,9 @@ const envSchema = z.object({
 
   CORS_ORIGINS: z.string().default("http://localhost:3000"),
   DEFAULT_ROOM_SLUG: z.string().default("general"),
+  CHANNELS: z.string().default("general,gaming,music,tech,watercooler"),
   MESSAGE_MAX_LENGTH: z.coerce.number().int().positive().default(2000),
+  TYPING_THROTTLE_MS: z.coerce.number().int().positive().default(2000),
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(10000),
   MAX_CONNECTIONS: z.coerce.number().int().positive().default(1000),
@@ -67,3 +69,11 @@ if (!parsed.success) {
 }
 
 export const env = parsed.data;
+
+export const channelSlugs = env.CHANNELS.split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+export function isKnownChannel(slug: string): boolean {
+  return channelSlugs.includes(slug);
+}
