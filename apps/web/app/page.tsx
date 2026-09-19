@@ -3,13 +3,24 @@ import { useState, useRef, useEffect } from "react";
 import { useSocket } from "../context/SocketProvider";
 import classes from "./page.module.css";
 
+const BRUTAL_AVATAR_COLORS = [
+  "#FFE600", // Yellow
+  "#00E5FF", // Cyan
+  "#00F0A0", // Mint
+  "#FF5376", // Coral
+  "#A78BFA", // Lavender
+  "#FF9F1C", // Orange
+  "#38BDF8", // Sky
+  "#F472B6", // Pink
+];
+
 function avatarStyle(name: string): React.CSSProperties {
   let hash = 0;
   for (let i = 0; i < name.length; i++) {
     hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
   }
-  const hue = hash % 360;
-  return { background: `hsl(${hue}, 60%, 45%)` };
+  const color = BRUTAL_AVATAR_COLORS[Math.abs(hash) % BRUTAL_AVATAR_COLORS.length];
+  return { background: color, color: "#000000" };
 }
 
 function channelTitle(slug: string): string {
@@ -21,9 +32,9 @@ function channelTitle(slug: string): string {
 
 function typingLabel(names: string[]): string {
   if (names.length === 0) return "";
-  if (names.length === 1) return `${names[0]} is typing...`;
-  if (names.length === 2) return `${names[0]} and ${names[1]} are typing...`;
-  return `${names[0]} and ${names.length - 1} others are typing...`;
+  if (names.length === 1) return `${names[0]} is transmitting...`;
+  if (names.length === 2) return `${names[0]} and ${names[1]} are transmitting...`;
+  return `${names[0]} and ${names.length - 1} others are transmitting...`;
 }
 
 export default function Page() {
@@ -47,7 +58,25 @@ export default function Page() {
   const [username, setUsername] = useState("");
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("vortex_theme") as "dark" | "light" | null;
+    if (saved === "light" || saved === "dark") {
+      setTheme(saved);
+    }
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    localStorage.setItem("vortex_theme", next);
+  };
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -92,41 +121,77 @@ export default function Page() {
 
   if (!joined) {
     return (
-      <div className={classes.usernameModal}>
-        <div className={classes.usernameCard}>
-          <div className={classes.usernameTitle}>
-            <img
-              src="/vortex-logo.png"
-              alt="Vortex logo"
-              width={56}
-              height={56}
-              className={classes.usernameLogo}
-            />
-            Vortex
-          </div>
-          <div className={classes.usernameSub}>Enter a name to join the server</div>
-          <input
-            className={classes.usernameInput}
-            placeholder="Your name..."
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            onKeyDown={handleKeyDown}
-            autoFocus
-            maxLength={20}
-            aria-label="Your name"
-          />
-          {(joinError || error) && (
-            <div className={classes.errorText} role="alert">
-              {joinError || error}
+      <div className={classes.usernameModal} data-theme={theme}>
+        <div className={classes.windowFrame}>
+          <div className={classes.windowTitleBar}>
+            <div className={classes.windowTitle}>
+              <span className={classes.windowPrompt}>&gt;_</span> SYS://AUTH_GATEWAY
             </div>
-          )}
-          <button
-            className={classes.usernameBtn}
-            onClick={handleJoin}
-            disabled={!username.trim() || joining}
-          >
-            {joining ? "Joining..." : "Join Chat"}
-          </button>
+            <div className={classes.windowControls}>
+              <button
+                type="button"
+                className={classes.windowBtn}
+                onClick={toggleTheme}
+                title="Toggle Theme"
+                style={{ cursor: "pointer", width: "auto", padding: "0 6px" }}
+              >
+                {theme === "dark" ? "☀ LIGHT" : "☾ DARK"}
+              </button>
+              <span className={classes.windowBtn} aria-hidden="true">—</span>
+              <span className={classes.windowBtn} aria-hidden="true">□</span>
+              <span className={`${classes.windowBtn} ${classes.windowBtnClose}`} aria-hidden="true">✕</span>
+            </div>
+          </div>
+
+          <div className={classes.usernameCard}>
+            <div className={classes.usernameBrand}>
+              <div className={classes.logoContainer}>
+                <img
+                  src="/vortex-logo.png"
+                  alt="Vortex logo"
+                  width={52}
+                  height={52}
+                  className={classes.usernameLogo}
+                />
+              </div>
+              <h1 className={classes.usernameTitle}>VORTEX // CHAT</h1>
+              <div className={classes.securityBadge}>IDENTITY VERIFICATION REQUIRED</div>
+              <p className={classes.usernameSub}>ASSIGN OPERATOR HANDLE TO INITIALIZE SESSION</p>
+            </div>
+
+            <label className={classes.inputLabel} htmlFor="operator-handle">
+              OPERATOR_HANDLE // [MAX 20 CHARS]
+            </label>
+            <input
+              id="operator-handle"
+              className={classes.usernameInput}
+              placeholder="e.g. cyber_operator"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              onKeyDown={handleKeyDown}
+              autoFocus
+              maxLength={20}
+              aria-label="Operator handle"
+            />
+
+            {(joinError || error) && (
+              <div className={classes.errorBanner} role="alert">
+                <span>[!]</span> {joinError || error}
+              </div>
+            )}
+
+            <button
+              className={classes.usernameBtn}
+              onClick={handleJoin}
+              disabled={!username.trim() || joining}
+            >
+              {joining ? "[ INITIALIZING SESSION... ]" : "[ ENTER SERVER → ]"}
+            </button>
+
+            <div className={classes.terminalFooter}>
+              REDIS_PUBSUB: ACTIVE // KAFKA_STREAM: ONLINE // PROTOCOL: WS_V2
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -135,21 +200,24 @@ export default function Page() {
   const activeMinutes = Math.round(onlineUsers.length);
 
   return (
-    <div className={classes.app}>
+    <div className={classes.app} data-theme={theme}>
       <aside className={classes.sidebar} aria-label="Channels">
         <div className={classes.brand}>
-          <img
-            src="/vortex-logo.png"
-            alt="Vortex logo"
-            width={36}
-            height={36}
-            className={classes.brandLogo}
-          />
-          VORTEX
+          <div className={classes.brandLeft}>
+            <img
+              src="/vortex-logo.png"
+              alt="Vortex logo"
+              width={34}
+              height={34}
+              className={classes.brandLogo}
+            />
+            <span>VORTEX</span>
+          </div>
+          <div className={classes.brandBadge}>v1.0</div>
         </div>
 
         <div className={classes.channelGroup}>
-          <div className={classes.channelGroupLabel}>TEXT CHANNELS</div>
+          <div className={classes.channelGroupLabel}>[ TEXT CHANNELS ]</div>
           {channels.map((ch) => {
             const active = ch.slug === activeChannel;
             return (
@@ -174,11 +242,11 @@ export default function Page() {
             <div className={classes.userName}>{currentUser?.username}</div>
             <div className={classes.userStatus}>
               <span className={classes.onlineDot} />
-              Online
+              ONLINE
             </div>
           </div>
           <button className={classes.userSwitch} onClick={reset} aria-label="Log out">
-            Log out
+            [ LOGOUT ]
           </button>
         </div>
       </aside>
@@ -191,21 +259,34 @@ export default function Page() {
               {channelTitle(activeChannel)}
             </div>
             <div className={classes.chatTopic}>
-              {activeMinutes} {activeMinutes === 1 ? "member" : "members"} in this channel
+              [{activeMinutes} {activeMinutes === 1 ? "OPERATOR" : "OPERATORS"} ONLINE]
             </div>
           </div>
-          <div className={classes.status}>
-            <div className={`${classes.dot} ${connected ? classes.dotOnline : ""}`} />
-            {connected ? "Connected" : "Reconnecting..."}
+          <div className={classes.chatHeaderControls}>
+            <button
+              className={classes.themeToggleBtn}
+              onClick={toggleTheme}
+              aria-label="Toggle theme"
+              title="Toggle theme"
+            >
+              {theme === "dark" ? "☀ LIGHT" : "☾ DARK"}
+            </button>
+            <div className={classes.status}>
+              <div className={`${classes.dot} ${connected ? classes.dotOnline : ""}`} />
+              {connected ? "CONNECTED // LIVE" : "DISCONNECTED // RETRYING"}
+            </div>
           </div>
         </header>
 
         <div className={classes.messages} role="log" aria-live="polite" aria-label="Chat messages">
           {messages.length === 0 ? (
             <div className={classes.emptyState}>
-              <div className={classes.emptyIcon}>#</div>
-              <div className={classes.emptyText}>
-                No messages here yet. Say hello in #{activeChannel}!
+              <div className={classes.emptyBox}>
+                <div className={classes.emptyIcon}>#</div>
+                <div className={classes.emptyTitle}>NO TRANSMISSIONS LOGGED</div>
+                <div className={classes.emptyText}>
+                  Be the first operator to broadcast a message in #{activeChannel}.
+                </div>
               </div>
             </div>
           ) : (
@@ -215,7 +296,7 @@ export default function Page() {
               return (
                 <div
                   key={msg.messageId}
-                  className={`${classes.messageRow} ${isOwn ? classes.messageOwn : ""}`}
+                  className={`${classes.messageRow} ${isOwn ? classes.messageRowOwn : ""}`}
                 >
                   <div
                     className={classes.messageAvatar}
@@ -224,14 +305,11 @@ export default function Page() {
                   >
                     {name.charAt(0).toUpperCase()}
                   </div>
-                  <div className={classes.messageBody}>
+                  <div className={`${classes.messageCard} ${isOwn ? classes.messageCardOwn : ""}`}>
                     <div className={classes.messageHeader}>
-                      <span
-                        className={`${classes.messageUser} ${isOwn ? classes.messageUserOwn : ""}`}
-                      >
-                        {name}
-                      </span>
-                      <span className={classes.messageTime}>{formatTime(msg.createdAt)}</span>
+                      <span className={classes.messageUser}>{name}</span>
+                      {isOwn && <span className={classes.messageTag}>YOU</span>}
+                      <span className={classes.messageTime}>[{formatTime(msg.createdAt)}]</span>
                     </div>
                     <div className={classes.messageText}>{msg.text}</div>
                   </div>
@@ -244,7 +322,7 @@ export default function Page() {
 
         {typingUsers.length > 0 && (
           <div className={classes.typing} aria-live="polite">
-            {typingLabel(typingUsers)}
+            <span>&gt;</span> {typingLabel(typingUsers)} <span className={classes.typingCursor} />
           </div>
         )}
 
@@ -252,7 +330,7 @@ export default function Page() {
           <div className={classes.inputRow}>
             <input
               className={classes.input}
-              placeholder={connected ? `Message #${activeChannel}` : "Waiting for connection..."}
+              placeholder={connected ? `[ BROADCAST TO #${activeChannel.toUpperCase()}... ]` : "[ SYSTEM OFFLINE - RECONNECTING... ]"}
               value={message}
               onChange={(e) => handleInputChange(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -266,21 +344,21 @@ export default function Page() {
               onClick={handleSend}
               disabled={!connected || !message.trim()}
             >
-              Send
+              [ TRANSMIT ↵ ]
             </button>
           </div>
         </div>
       </main>
 
       <aside className={classes.members} aria-label="Members">
-        <div className={classes.membersHeader}>Members — {onlineUsers.length}</div>
-        <div className={classes.membersSection}>ONLINE</div>
+        <div className={classes.membersHeader}>[ DIRECTORY // {onlineUsers.length} ONLINE ]</div>
+        <div className={classes.membersSection}>[ ACTIVE OPERATORS ]</div>
         {onlineUsers.length === 0 ? (
-          <div className={classes.membersEmpty}>No one else is here right now.</div>
+          <div className={classes.membersEmpty}>NO OTHER OPERATORS DETECTED.</div>
         ) : (
           onlineUsers.map((user) => (
             <div key={user.userId} className={classes.member}>
-              <span className={classes.memberDot} />
+              <span className={classes.memberSquare} />
               <span className={classes.memberName}>{user.username}</span>
             </div>
           ))
