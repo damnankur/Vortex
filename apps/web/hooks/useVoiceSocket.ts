@@ -80,8 +80,23 @@ export function useVoiceSocket({
         return self ? [self, ...remotes] : remotes;
       });
 
-      payload.users.forEach((peer) => {
-        setupPeerWithNegotiation(peer.socketId);
+      payload.users.forEach(async (peer) => {
+        const pc = setupPeerWithNegotiation(peer.socketId);
+        const neg = webrtcRef.current.getNegotiationState(peer.socketId);
+        try {
+          neg.makingOffer = true;
+          const offer = await pc.createOffer();
+          if (pc.signalingState !== "stable") return;
+          await pc.setLocalDescription(offer);
+          socket.emit("voice:signal", {
+            targetSocketId: peer.socketId,
+            signal: pc.localDescription?.toJSON(),
+          });
+        } catch (err) {
+          console.warn("Initial offer error:", err);
+        } finally {
+          neg.makingOffer = false;
+        }
       });
     };
 

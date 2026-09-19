@@ -44,6 +44,27 @@ export class WebRTCMeshService {
       if (this.audioCtx.state === "suspended") {
         this.audioCtx.resume().catch(() => undefined);
       }
+      // Play a soft 80ms connection tone to confirm audio device & trigger Chrome tab speaker
+      this.playTone(523.25, 0.08, 0.04);
+      setTimeout(() => this.playTone(659.25, 0.1, 0.04), 90);
+    } catch {
+      // ignore
+    }
+  }
+
+  public playTone(freq: number, duration: number, volume = 0.04): void {
+    if (!this.audioCtx || this.audioCtx.state !== "running") return;
+    try {
+      const osc = this.audioCtx.createOscillator();
+      const gain = this.audioCtx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, this.audioCtx.currentTime);
+      gain.gain.setValueAtTime(volume, this.audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, this.audioCtx.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(this.audioCtx.destination);
+      osc.start();
+      osc.stop(this.audioCtx.currentTime + duration);
     } catch {
       // ignore
     }
@@ -98,8 +119,10 @@ export class WebRTCMeshService {
     };
 
     pc.ontrack = (event) => {
-      const stream = event.streams[0];
-      if (!stream) return;
+      const stream =
+        event.streams && event.streams[0]
+          ? event.streams[0]
+          : new MediaStream([event.track]);
 
       let audio = this.audioElements.get(targetSocketId);
       if (!audio) {
@@ -107,12 +130,13 @@ export class WebRTCMeshService {
         audio.autoplay = true;
         (audio as HTMLAudioElement & { playsInline?: boolean }).playsInline = true;
         audio.muted = isDeafened;
+        audio.volume = 1.0;
         document.body.appendChild(audio);
         this.audioElements.set(targetSocketId, audio);
       }
       audio.srcObject = stream;
 
-      // Ensure AudioContext pipes the stream to speakers
+      // Pipe through AudioContext destination if available
       if (this.audioCtx && this.audioCtx.state === "running") {
         try {
           if (!this.audioSourceNodes.has(targetSocketId)) {
