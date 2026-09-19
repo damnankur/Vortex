@@ -89,6 +89,7 @@ interface ISocketContext {
   // Notifications
   notificationPermission: NotificationPermission;
   requestNotificationPermission: () => Promise<void>;
+  socket: Socket | null;
 }
 
 const SocketContext = React.createContext<ISocketContext | null>(null);
@@ -154,6 +155,7 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
   const [typingByRoom, setTypingByRoom] = useState<Record<string, string[]>>({});
   const [loadingAuth, setLoadingAuth] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>("default");
+  const [socket, setSocket] = useState<Socket | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
   const tokenRef = useRef<string | null>(null);
@@ -307,6 +309,9 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
         reconnectionDelay: 2000,
         timeout: 10000,
       });
+
+      socketRef.current = _socket;
+      setSocket(_socket);
 
       const upsertMessage = (msg: Message) => {
         setMessagesByRoom((prev) => {
@@ -770,6 +775,7 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
     localStorage.removeItem("vortex_token");
     socketRef.current?.disconnect();
     socketRef.current = null;
+    setSocket(null);
     tokenRef.current = null;
     setCurrentUser(null);
     setMessagesByRoom({});
@@ -884,6 +890,7 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
         loadingAuth,
         notificationPermission,
         requestNotificationPermission,
+        socket,
       }}
     >
       {children}

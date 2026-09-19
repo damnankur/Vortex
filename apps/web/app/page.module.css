@@ -1436,6 +1436,278 @@
   border-color: #000000;
 }
 
+/* ---------- Voice Calling UI & WebRTC Mesh ---------- */
+
+.voiceHeaderBtn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  border: var(--border-mid);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  padding: 5px 10px;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.1s ease;
+}
+
+.voiceHeaderBtn:hover:not(:disabled) {
+  background: var(--accent);
+  color: #000000;
+  border-color: #000000;
+  transform: translate(-1px, -1px);
+  box-shadow: var(--shadow-md);
+}
+
+.voiceHeaderBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.voiceHeaderConnectedBtn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 900;
+  border: 2px solid #00FF66;
+  background: rgba(0, 255, 102, 0.12);
+  color: #00FF66;
+  padding: 5px 10px;
+  cursor: pointer;
+  box-shadow: 2px 2px 0px #000000;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.1s ease;
+}
+
+.voiceHeaderConnectedBtn:hover {
+  background: #FF3366;
+  color: #FFFFFF;
+  border-color: #000000;
+  transform: translate(-1px, -1px);
+}
+
+.channelVoiceBadge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 900;
+  background: #00FF66;
+  color: #000000;
+  border: 1px solid #000000;
+  padding: 1px 5px;
+  box-shadow: 1px 1px 0px #000000;
+  margin-left: auto;
+  letter-spacing: 0.5px;
+}
+
+.voiceDock {
+  background: var(--bg-primary);
+  border-bottom: var(--border-thick);
+  box-shadow: 0px 4px 0px rgba(0, 0, 0, 0.15);
+  padding: 12px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: slideDown 0.15s ease-out;
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.voiceDockHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.voiceDockInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.voiceLiveDot {
+  width: 9px;
+  height: 9px;
+  background: #00FF66;
+  border: 1.5px solid #000000;
+  box-shadow: 1px 1px 0px #000000;
+  animation: pulseDot 1.4s infinite;
+}
+
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
+}
+
+.voiceDockTitle {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--text-primary);
+  letter-spacing: 0.5px;
+}
+
+.voiceDockCount {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--text-secondary);
+}
+
+.voiceDockControls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.voiceControlBtn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  border: var(--border-mid);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  padding: 5px 9px;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.1s ease;
+}
+
+.voiceControlBtn:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: var(--shadow-md);
+  border-color: #000000;
+}
+
+.voiceControlMuted {
+  background: var(--accent-pink) !important;
+  color: #ffffff !important;
+  border-color: #000000 !important;
+}
+
+.voiceControlDeafened {
+  background: #FF9900 !important;
+  color: #000000 !important;
+  border-color: #000000 !important;
+}
+
+.voiceDisconnectBtn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 900;
+  border: var(--border-mid);
+  background: var(--bg-secondary);
+  color: var(--accent-pink);
+  padding: 5px 10px;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.1s ease;
+}
+
+.voiceDisconnectBtn:hover {
+  background: var(--accent-pink);
+  color: #ffffff;
+  border-color: #000000;
+  transform: translate(-1px, -1px);
+  box-shadow: var(--shadow-md);
+}
+
+.voiceDockError {
+  background: rgba(255, 34, 34, 0.12);
+  border: 1.5px solid var(--accent-pink);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 10px;
+  box-shadow: 1px 1px 0px #000000;
+}
+
+.voiceParticipantsList {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.voiceParticipantCard {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-secondary);
+  border: 2px solid var(--border-color);
+  padding: 5px 10px;
+  box-shadow: 2px 2px 0px #000000;
+  transition: all 0.12s ease;
+}
+
+.voiceSpeaking {
+  border-color: #00FF66 !important;
+  box-shadow: 0 0 10px rgba(0, 255, 102, 0.5), 2px 2px 0px #000000 !important;
+  background: rgba(0, 255, 102, 0.08) !important;
+}
+
+.voiceParticipantAvatar {
+  width: 26px;
+  height: 26px;
+  border: 1.5px solid #000000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 900;
+  position: relative;
+}
+
+.voiceHaloRing {
+  position: absolute;
+  inset: -3px;
+  border: 2px solid #00FF66;
+  pointer-events: none;
+  animation: haloPulse 1s infinite alternate;
+}
+
+@keyframes haloPulse {
+  0% { transform: scale(1); opacity: 0.7; }
+  100% { transform: scale(1.15); opacity: 1; }
+}
+
+.voiceParticipantMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.voiceParticipantName {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.voiceMutedBadge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 900;
+  background: var(--accent-pink);
+  color: #ffffff;
+  padding: 1px 4px;
+  border: 1px solid #000000;
+}
+
 @media (max-width: 960px) {
   .members {
     display: none;

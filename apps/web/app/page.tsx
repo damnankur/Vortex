@@ -1,6 +1,7 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
 import { useSocket, Channel } from "../context/SocketProvider";
+import { useVoice } from "../context/VoiceProvider";
 import classes from "./page.module.css";
 
 const BRUTAL_AVATAR_COLORS = [
@@ -103,6 +104,22 @@ export default function Page() {
     notificationPermission,
     requestNotificationPermission,
   } = useSocket();
+
+  // WebRTC Voice Calling context
+  const {
+    currentVoiceChannel,
+    isInVoice,
+    isConnecting: isVoiceConnecting,
+    isMuted: isVoiceMuted,
+    isDeafened: isVoiceDeafened,
+    voiceError,
+    voiceParticipants,
+    voiceCounts,
+    joinVoice,
+    leaveVoice,
+    toggleMute: toggleVoiceMute,
+    toggleDeafen: toggleVoiceDeafen,
+  } = useVoice();
 
   // Chat message & theme state
   const [message, setMessage] = useState("");
@@ -650,6 +667,14 @@ export default function Page() {
                     {isLocked ? "🔒" : "🔓"}
                   </span>
                 )}
+                {(voiceCounts[ch.slug] || 0) > 0 && (
+                  <span
+                    className={classes.channelVoiceBadge}
+                    title={`${voiceCounts[ch.slug]} operator(s) in voice`}
+                  >
+                    🎙 {voiceCounts[ch.slug]}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -688,6 +713,30 @@ export default function Page() {
             </div>
           </div>
           <div className={classes.chatHeaderControls}>
+            {isInVoice && currentVoiceChannel === activeChannel ? (
+              <button
+                type="button"
+                className={classes.voiceHeaderConnectedBtn}
+                onClick={leaveVoice}
+                title="Connected to voice in this channel. Click to disconnect."
+              >
+                🟢 [ VOICE: ACTIVE ]
+              </button>
+            ) : (
+              <button
+                type="button"
+                className={classes.voiceHeaderBtn}
+                onClick={() => joinVoice(activeChannel)}
+                disabled={isVoiceConnecting}
+                title={
+                  (voiceCounts[activeChannel] || 0) > 0
+                    ? `${voiceCounts[activeChannel]} operators in voice in #${activeChannel}`
+                    : `Start or join voice call in #${activeChannel}`
+                }
+              >
+                🎙 {isVoiceConnecting ? "CONNECTING..." : (voiceCounts[activeChannel] || 0) > 0 ? `JOIN VOICE (${voiceCounts[activeChannel]})` : "JOIN VOICE"}
+              </button>
+            )}
             <button
               type="button"
               className={`${classes.notifyToggleBtn} ${
@@ -716,6 +765,87 @@ export default function Page() {
             </div>
           </div>
         </header>
+
+        {/* Active Voice Dock */}
+        {isInVoice && (
+          <div className={classes.voiceDock}>
+            <div className={classes.voiceDockHeader}>
+              <div className={classes.voiceDockInfo}>
+                <span className={classes.voiceLiveDot} />
+                <span className={classes.voiceDockTitle}>
+                  SYS://VOICE_MESH // #{currentVoiceChannel?.toUpperCase()}
+                </span>
+                <span className={classes.voiceDockCount}>
+                  [{voiceParticipants.length} {voiceParticipants.length === 1 ? "OPERATOR" : "OPERATORS"}]
+                </span>
+              </div>
+              <div className={classes.voiceDockControls}>
+                <button
+                  type="button"
+                  className={`${classes.voiceControlBtn} ${
+                    isVoiceMuted ? classes.voiceControlMuted : ""
+                  }`}
+                  onClick={toggleVoiceMute}
+                  title={isVoiceMuted ? "Unmute microphone" : "Mute microphone"}
+                >
+                  {isVoiceMuted ? "🎙 MUTED" : "🎙 MUTE"}
+                </button>
+                <button
+                  type="button"
+                  className={`${classes.voiceControlBtn} ${
+                    isVoiceDeafened ? classes.voiceControlDeafened : ""
+                  }`}
+                  onClick={toggleVoiceDeafen}
+                  title={isVoiceDeafened ? "Undeafen audio" : "Deafen all audio"}
+                >
+                  {isVoiceDeafened ? "🎧 DEAFENED" : "🎧 DEAFEN"}
+                </button>
+                <button
+                  type="button"
+                  className={classes.voiceDisconnectBtn}
+                  onClick={leaveVoice}
+                  title="Disconnect from voice channel"
+                >
+                  [ ⏻ LEAVE ]
+                </button>
+              </div>
+            </div>
+
+            {voiceError && (
+              <div className={classes.voiceDockError}>
+                <span>[!]</span> {voiceError}
+              </div>
+            )}
+
+            <div className={classes.voiceParticipantsList}>
+              {voiceParticipants.map((participant) => (
+                <div
+                  key={participant.socketId || participant.userId}
+                  className={`${classes.voiceParticipantCard} ${
+                    participant.isSpeaking ? classes.voiceSpeaking : ""
+                  }`}
+                >
+                  <div
+                    className={classes.voiceParticipantAvatar}
+                    style={avatarStyle(participant.username)}
+                  >
+                    {participant.username.charAt(0).toUpperCase()}
+                    {participant.isSpeaking && <span className={classes.voiceHaloRing} />}
+                  </div>
+                  <div className={classes.voiceParticipantMeta}>
+                    <span className={classes.voiceParticipantName}>
+                      {participant.username}
+                      {participant.isSelf ? " (YOU)" : ""}
+                    </span>
+                    {participant.isMuted && (
+                      <span className={classes.voiceMutedBadge}>MUTED</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className={classes.messages} role="log" aria-live="polite" aria-label="Chat messages">
           {messages.length === 0 ? (

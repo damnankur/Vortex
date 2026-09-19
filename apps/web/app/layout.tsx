@@ -1,6 +1,7 @@
 import "./globals.css";
 import type { Metadata } from "next";
 import { SocketProvider } from "../context/SocketProvider";
+import { VoiceProvider } from "../context/VoiceProvider";
 
 export const metadata: Metadata = {
   title: "Vortex - Real-time Chat",
@@ -15,7 +16,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <SocketProvider>
-        <body>{children}</body>
+        <VoiceProvider>
+          <body>{children}</body>
+        </VoiceProvider>
       </SocketProvider>
     </html>
   );
