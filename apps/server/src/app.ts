@@ -3,7 +3,7 @@ import cors from "cors";
 import http from "http";
 import { env } from "./env";
 import prisma from "./services/prisma";
-import { signToken, verifyToken, AuthUser } from "./lib/auth";
+import { signToken, verifyToken, hashPassword, verifyPassword, AuthUser } from "./lib/auth";
 import { logger } from "./lib/logger";
 import { httpRequests, metricsHandler } from "./lib/metrics";
 import { SocketService } from "./services/socket";
@@ -27,6 +27,11 @@ export async function createApp() {
   app.use(cors({ origin: allowedOrigins, credentials: true }));
   app.use(express.json({ limit: "16kb" }));
 
+  const httpServer = http.createServer(app);
+  const socketService = new SocketService();
+  socketService.io.attach(httpServer);
+  socketService.socketListeners();
+
   app.use((req, res, next) => {
     res.on("finish", () => {
       httpRequests.inc({
@@ -44,6 +49,113 @@ export async function createApp() {
 
   app.get("/metrics", metricsHandler);
 
+  // ---------- User Registration ----------
+  app.post("/auth/register", async (req, res) => {
+    const { username, password, serverInviteCode } = req.body as {
+      username?: unknown;
+      password?: unknown;
+      serverInviteCode?: unknown;
+    };
+
+    const cleanUsername = typeof username === "string" ? username.trim() : "";
+    const cleanPassword = typeof password === "string" ? password : "";
+
+    if (!cleanUsername || cleanUsername.length < 3 || cleanUsername.length > 20) {
+      res.status(400).json({ error: "Username must be 3-20 characters" });
+      return;
+    }
+
+    if (!/^[a-zA-Z0-9_-]+$/.test(cleanUsername)) {
+      res.status(400).json({ error: "Username can only contain letters, numbers, hyphens, and underscores" });
+      return;
+    }
+
+    if (!cleanPassword || cleanPassword.length < 6) {
+      res.status(400).json({ error: "Password must be at least 6 characters" });
+      return;
+    }
+
+    // Check server invite code if configured
+    if (env.SERVER_INVITE_CODE) {
+      const invite = typeof serverInviteCode === "string" ? serverInviteCode.trim() : "";
+      if (invite !== env.SERVER_INVITE_CODE) {
+        res.status(403).json({ error: "Invalid server invite passkey. Access restricted to friends." });
+        return;
+      }
+    }
+
+    try {
+      const existing = await prisma.user.findUnique({
+        where: { username: cleanUsername },
+      });
+
+      if (existing) {
+        res.status(409).json({ error: "Username already taken" });
+        return;
+      }
+
+      const passwordHash = await hashPassword(cleanPassword);
+      const user = await prisma.user.create({
+        data: {
+          username: cleanUsername,
+          passwordHash,
+        },
+      });
+
+      const token = signToken({ userId: user.id, username: user.username });
+      res.status(201).json({ token, user: { id: user.id, username: user.username } });
+    } catch (err) {
+      logger.error({ err }, "registration failed");
+      res.status(500).json({ error: "Registration failed" });
+    }
+  });
+
+  // ---------- User Login ----------
+  app.post("/auth/login", async (req, res) => {
+    const { username, password } = req.body as {
+      username?: unknown;
+      password?: unknown;
+    };
+
+    const cleanUsername = typeof username === "string" ? username.trim() : "";
+    const cleanPassword = typeof password === "string" ? password : "";
+
+    if (!cleanUsername || !cleanPassword) {
+      res.status(400).json({ error: "Username and password are required" });
+      return;
+    }
+
+    try {
+      const user = await prisma.user.findUnique({
+        where: { username: cleanUsername },
+      });
+
+      if (!user || !user.passwordHash) {
+        res.status(401).json({ error: "Invalid username or password" });
+        return;
+      }
+
+      const isMatch = await verifyPassword(cleanPassword, user.passwordHash);
+      if (!isMatch) {
+        res.status(401).json({ error: "Invalid username or password" });
+        return;
+      }
+
+      const token = signToken({ userId: user.id, username: user.username });
+      res.json({ token, user: { id: user.id, username: user.username } });
+    } catch (err) {
+      logger.error({ err }, "login failed");
+      res.status(500).json({ error: "Login failed" });
+    }
+  });
+
+  // ---------- Current Authenticated User ----------
+  app.get("/auth/me", authRequired, async (req, res) => {
+    const user = (req as Request & { user: AuthUser }).user;
+    res.json({ user: { id: user.userId, username: user.username } });
+  });
+
+  // Backward-compatible guest join
   app.post("/auth/join", async (req, res) => {
     const raw = (req.body as { username?: unknown } | undefined)?.username;
     const username = typeof raw === "string" ? raw.trim() : "";
@@ -66,13 +178,29 @@ export async function createApp() {
     }
   });
 
-  app.get("/channels", authRequired, async (_req, res) => {
+  // ---------- Channels List ----------
+  app.get("/channels", authRequired, async (req, res) => {
+    const user = (req as Request & { user: AuthUser }).user;
     try {
-      const channels = await prisma.room.findMany({
+      const rooms = await prisma.room.findMany({
         where: { type: "CHANNEL" },
-        orderBy: { name: "asc" },
-        select: { slug: true, name: true, type: true },
+        orderBy: { createdAt: "asc" },
+        include: {
+          memberships: {
+            where: { userId: user.userId },
+            select: { id: true },
+          },
+        },
       });
+
+      const channels = rooms.map((r) => ({
+        slug: r.slug,
+        name: r.name,
+        type: r.type,
+        isPrivate: r.isPrivate,
+        isMember: !r.isPrivate || r.memberships.length > 0,
+      }));
+
       res.json({ channels });
     } catch (err) {
       logger.error({ err }, "fetch channels failed");
@@ -80,7 +208,145 @@ export async function createApp() {
     }
   });
 
+  // ---------- Create Dynamic Channel ----------
+  app.post("/channels", authRequired, async (req, res) => {
+    const user = (req as Request & { user: AuthUser }).user;
+    const { name, slug: customSlug, isPrivate, inviteCode } = req.body as {
+      name?: unknown;
+      slug?: unknown;
+      isPrivate?: unknown;
+      inviteCode?: unknown;
+    };
+
+    const cleanName = typeof name === "string" ? name.trim() : "";
+    if (!cleanName || cleanName.length > 50) {
+      res.status(400).json({ error: "Channel name must be 1-50 characters" });
+      return;
+    }
+
+    let slug = typeof customSlug === "string" ? customSlug.trim().toLowerCase() : "";
+    if (!slug) {
+      slug = cleanName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+    }
+
+    if (!slug || slug.length > 50) {
+      res.status(400).json({ error: "Invalid channel slug" });
+      return;
+    }
+
+    const cleanIsPrivate = Boolean(isPrivate);
+    const cleanInviteCode = typeof inviteCode === "string" ? inviteCode.trim() : null;
+
+    try {
+      const existing = await prisma.room.findUnique({
+        where: { slug },
+      });
+
+      if (existing) {
+        res.status(409).json({ error: "A channel with this identifier already exists" });
+        return;
+      }
+
+      const room = await prisma.room.create({
+        data: {
+          name: cleanName,
+          slug,
+          type: "CHANNEL",
+          isPrivate: cleanIsPrivate,
+          inviteCode: cleanIsPrivate ? cleanInviteCode : null,
+          createdById: user.userId,
+          memberships: {
+            create: {
+              userId: user.userId,
+            },
+          },
+        },
+      });
+
+      // Broadcast new channel to all connected sockets
+      socketService.io.emit("channel:created", {
+        slug: room.slug,
+        name: room.name,
+        type: room.type,
+        isPrivate: room.isPrivate,
+      });
+
+      res.status(201).json({
+        channel: {
+          slug: room.slug,
+          name: room.name,
+          type: room.type,
+          isPrivate: room.isPrivate,
+          isMember: true,
+        },
+      });
+    } catch (err) {
+      logger.error({ err }, "create channel failed");
+      res.status(500).json({ error: "Failed to create channel" });
+    }
+  });
+
+  // ---------- Join Private / Code-Gated Channel ----------
+  app.post("/channels/:slug/join", authRequired, async (req, res) => {
+    const user = (req as Request & { user: AuthUser }).user;
+    const { slug } = req.params;
+    const { inviteCode } = req.body as { inviteCode?: unknown };
+
+    try {
+      const room = await prisma.room.findUnique({
+        where: { slug },
+        include: {
+          memberships: {
+            where: { userId: user.userId },
+          },
+        },
+      });
+
+      if (!room) {
+        res.status(404).json({ error: "Channel not found" });
+        return;
+      }
+
+      if (room.memberships.length > 0) {
+        res.json({ success: true, message: "Already a member", slug: room.slug });
+        return;
+      }
+
+      if (room.isPrivate) {
+        const suppliedCode = typeof inviteCode === "string" ? inviteCode.trim() : "";
+        if (room.inviteCode && room.inviteCode !== suppliedCode) {
+          res.status(403).json({ error: "Invalid channel passkey" });
+          return;
+        }
+      }
+
+      await prisma.roomMembership.upsert({
+        where: {
+          userId_roomId: {
+            userId: user.userId,
+            roomId: room.id,
+          },
+        },
+        create: {
+          userId: user.userId,
+          roomId: room.id,
+        },
+        update: {},
+      });
+
+      res.json({ success: true, slug: room.slug });
+    } catch (err) {
+      logger.error({ err, slug }, "join channel failed");
+      res.status(500).json({ error: "Failed to join channel" });
+    }
+  });
+
+  // ---------- Messages List ----------
   app.get("/messages", authRequired, async (req, res) => {
+    const user = (req as Request & { user: AuthUser }).user;
     const roomId =
       typeof req.query.roomId === "string" ? req.query.roomId : env.DEFAULT_ROOM_SLUG;
     const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 100);
@@ -89,6 +355,21 @@ export async function createApp() {
     const hasValidBefore = before && !Number.isNaN(before.getTime());
 
     try {
+      // If room is private, verify user is a member
+      const room = await prisma.room.findUnique({
+        where: { slug: roomId },
+        include: {
+          memberships: {
+            where: { userId: user.userId },
+          },
+        },
+      });
+
+      if (room && room.isPrivate && room.memberships.length === 0) {
+        res.status(403).json({ error: "Access denied: channel is private" });
+        return;
+      }
+
       const messages = await prisma.message.findMany({
         where: {
           roomId,
@@ -115,11 +396,6 @@ export async function createApp() {
       res.status(500).json({ error: "failed to load messages" });
     }
   });
-
-  const httpServer = http.createServer(app);
-  const socketService = new SocketService();
-  socketService.io.attach(httpServer);
-  socketService.socketListeners();
 
   return { app, httpServer, socketService };
 }

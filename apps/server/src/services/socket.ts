@@ -7,6 +7,7 @@ import { verifyToken } from "../lib/auth";
 import { produceMessage } from "./kafka";
 import { logger } from "../lib/logger";
 import { messagesSent, socketConnections } from "../lib/metrics";
+import prisma from "./prisma";
 import type { ChatMessage, PresenceUser } from "../types";
 
 const publisher = new Redis({
@@ -109,20 +110,35 @@ export class SocketService {
       this.addPresence(user);
       this.broadcastPresence(env.DEFAULT_ROOM_SLUG);
 
-      socket.on("channel:join", (payload: unknown) => {
+      socket.on("channel:join", async (payload: unknown) => {
         const parsed = joinSchema.safeParse(payload);
         if (!parsed.success) return;
         const slug = parsed.data.slug;
-        if (!isKnownChannel(slug)) return;
 
-        const previous = (socket.data.roomId as string) || env.DEFAULT_ROOM_SLUG;
-        if (slug === previous) return;
+        try {
+          const room = await prisma.room.findUnique({
+            where: { slug },
+            include: { memberships: { where: { userId: user.userId } } },
+          });
 
-        socket.leave(previous);
-        socket.join(slug);
-        socket.data.roomId = slug;
-        this.broadcastPresence(previous);
-        this.broadcastPresence(slug);
+          if (!room) {
+            if (!isKnownChannel(slug)) return;
+          } else if (room.isPrivate && room.memberships.length === 0) {
+            socket.emit("error", "Access denied: channel is private");
+            return;
+          }
+
+          const previous = (socket.data.roomId as string) || env.DEFAULT_ROOM_SLUG;
+          if (slug === previous) return;
+
+          socket.leave(previous);
+          socket.join(slug);
+          socket.data.roomId = slug;
+          this.broadcastPresence(previous);
+          this.broadcastPresence(slug);
+        } catch (err) {
+          logger.error({ err, slug }, "failed to join channel");
+        }
       });
 
       socket.on("event: message", async (payload: unknown) => {

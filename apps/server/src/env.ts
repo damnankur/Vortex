@@ -30,6 +30,7 @@ const envSchema = z.object({
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(10000),
   MAX_CONNECTIONS: z.coerce.number().int().positive().default(1000),
+  SERVER_INVITE_CODE: z.string().optional(),
 });
 
 const envSchemaRefined = envSchema.superRefine((val, ctx) => {

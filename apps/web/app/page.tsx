@@ -1,6 +1,6 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
-import { useSocket } from "../context/SocketProvider";
+import { useSocket, Channel } from "../context/SocketProvider";
 import classes from "./page.module.css";
 
 const BRUTAL_AVATAR_COLORS = [
@@ -39,8 +39,11 @@ function typingLabel(names: string[]): string {
 
 export default function Page() {
   const {
-    join,
+    login,
+    register,
     reset,
+    createChannel,
+    joinChannelWithCode,
     sendMessage,
     emitTyping,
     switchChannel,
@@ -53,13 +56,37 @@ export default function Page() {
     joined,
     currentUser,
     error,
+    loadingAuth,
   } = useSocket();
+
+  // Chat message & theme state
   const [message, setMessage] = useState("");
-  const [username, setUsername] = useState("");
-  const [joining, setJoining] = useState(false);
-  const [joinError, setJoinError] = useState<string | null>(null);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Auth form state
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [serverInviteCode, setServerInviteCode] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  // Channel creation modal state
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [channelName, setChannelName] = useState("");
+  const [channelSlug, setChannelSlug] = useState("");
+  const [channelIsPrivate, setChannelIsPrivate] = useState(false);
+  const [channelInviteCode, setChannelInviteCode] = useState("");
+  const [createSubmitting, setCreateSubmitting] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  // Channel unlock modal state
+  const [targetUnlockChannel, setTargetUnlockChannel] = useState<Channel | null>(null);
+  const [unlockPasskey, setUnlockPasskey] = useState("");
+  const [unlockSubmitting, setUnlockSubmitting] = useState(false);
+  const [unlockError, setUnlockError] = useState<string | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem("vortex_theme") as "dark" | "light" | null;
@@ -82,16 +109,85 @@ export default function Page() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, activeChannel]);
 
-  const handleJoin = async () => {
-    if (!username.trim() || joining) return;
-    setJoining(true);
-    setJoinError(null);
+  // Handle Login & Register submission
+  const handleAuthSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!username.trim() || !password || authSubmitting) return;
+
+    setAuthSubmitting(true);
+    setAuthError(null);
+
     try {
-      await join(username.trim());
+      if (authMode === "login") {
+        await login(username.trim(), password);
+      } else {
+        await register(
+          username.trim(),
+          password,
+          serverInviteCode.trim() || undefined
+        );
+      }
     } catch (err) {
-      setJoinError(err instanceof Error ? err.message : "join failed");
+      setAuthError(err instanceof Error ? err.message : "Authentication failed");
     } finally {
-      setJoining(false);
+      setAuthSubmitting(false);
+    }
+  };
+
+  // Handle Channel Creation
+  const handleCreateChannelSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!channelName.trim() || createSubmitting) return;
+
+    setCreateSubmitting(true);
+    setCreateError(null);
+
+    try {
+      const created = await createChannel(
+        channelName.trim(),
+        channelSlug.trim() || undefined,
+        channelIsPrivate,
+        channelInviteCode.trim() || undefined
+      );
+      setShowCreateModal(false);
+      setChannelName("");
+      setChannelSlug("");
+      setChannelIsPrivate(false);
+      setChannelInviteCode("");
+      switchChannel(created.slug);
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : "Failed to create channel");
+    } finally {
+      setCreateSubmitting(false);
+    }
+  };
+
+  // Handle Channel Unlock / Code-Join
+  const handleUnlockSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!targetUnlockChannel || unlockSubmitting) return;
+
+    setUnlockSubmitting(true);
+    setUnlockError(null);
+
+    try {
+      await joinChannelWithCode(targetUnlockChannel.slug, unlockPasskey.trim());
+      setTargetUnlockChannel(null);
+      setUnlockPasskey("");
+    } catch (err) {
+      setUnlockError(err instanceof Error ? err.message : "Invalid channel passkey");
+    } finally {
+      setUnlockSubmitting(false);
+    }
+  };
+
+  const handleChannelClick = (ch: Channel) => {
+    if (ch.isPrivate && !ch.isMember) {
+      setTargetUnlockChannel(ch);
+      setUnlockPasskey("");
+      setUnlockError(null);
+    } else {
+      switchChannel(ch.slug);
     }
   };
 
@@ -111,14 +207,26 @@ export default function Page() {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (joined) handleSend();
-      else handleJoin();
+      handleSend();
     }
   };
 
   const formatTime = (iso: string) =>
     new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
+  // 1. Session Restoration Loading Screen
+  if (loadingAuth) {
+    return (
+      <div className={classes.loaderContainer} data-theme={theme}>
+        <div className={classes.loaderBox}>
+          <div className={classes.emptyIcon}>&gt;_</div>
+          <div className={classes.loaderText}>[ VERIFYING OPERATOR CREDENTIALS... ]</div>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. Brutalist Authentication Screen (Login + Register)
   if (!joined) {
     return (
       <div className={classes.usernameModal} data-theme={theme}>
@@ -154,42 +262,113 @@ export default function Page() {
                   className={classes.usernameLogo}
                 />
               </div>
-              <h1 className={classes.usernameTitle}>VORTEX // CHAT</h1>
-              <div className={classes.securityBadge}>IDENTITY VERIFICATION REQUIRED</div>
-              <p className={classes.usernameSub}>ASSIGN OPERATOR HANDLE TO INITIALIZE SESSION</p>
+              <h1 className={classes.usernameTitle}>VORTEX // PRIVATE</h1>
+              <div className={classes.securityBadge}>FRIEND-GROUP AUTHENTICATED GATEWAY</div>
             </div>
 
-            <label className={classes.inputLabel} htmlFor="operator-handle">
-              OPERATOR_HANDLE // [MAX 20 CHARS]
-            </label>
-            <input
-              id="operator-handle"
-              className={classes.usernameInput}
-              placeholder="e.g. cyber_operator"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              onKeyDown={handleKeyDown}
-              autoFocus
-              maxLength={20}
-              aria-label="Operator handle"
-            />
+            {/* Auth Mode Tabs: Login vs Register */}
+            <div className={classes.authTabs}>
+              <button
+                type="button"
+                className={`${classes.authTab} ${authMode === "login" ? classes.authTabActive : ""}`}
+                onClick={() => {
+                  setAuthMode("login");
+                  setAuthError(null);
+                }}
+              >
+                [ LOGIN ]
+              </button>
+              <button
+                type="button"
+                className={`${classes.authTab} ${authMode === "register" ? classes.authTabActive : ""}`}
+                onClick={() => {
+                  setAuthMode("register");
+                  setAuthError(null);
+                }}
+              >
+                [ REGISTER ]
+              </button>
+            </div>
 
-            {(joinError || error) && (
-              <div className={classes.errorBanner} role="alert">
-                <span>[!]</span> {joinError || error}
+            <form onSubmit={handleAuthSubmit}>
+              <label className={classes.inputLabel} htmlFor="operator-handle">
+                OPERATOR_HANDLE // [3-20 CHARS]
+              </label>
+              <input
+                id="operator-handle"
+                className={classes.usernameInput}
+                placeholder="e.g. cyber_operator"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                autoFocus
+                maxLength={20}
+                required
+                aria-label="Operator handle"
+              />
+
+              <label className={classes.inputLabel} htmlFor="operator-password">
+                PASSPHRASE // [MIN 6 CHARS]
+              </label>
+              <div className={classes.passwordWrapper}>
+                <input
+                  id="operator-password"
+                  type={showPassword ? "text" : "password"}
+                  className={classes.usernameInput}
+                  placeholder="••••••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  minLength={6}
+                  required
+                  aria-label="Passphrase"
+                />
+                <button
+                  type="button"
+                  className={classes.passwordToggle}
+                  onClick={() => setShowPassword(!showPassword)}
+                  aria-label="Toggle password visibility"
+                >
+                  {showPassword ? "[ HIDE ]" : "[ SHOW ]"}
+                </button>
               </div>
-            )}
 
-            <button
-              className={classes.usernameBtn}
-              onClick={handleJoin}
-              disabled={!username.trim() || joining}
-            >
-              {joining ? "[ INITIALIZING SESSION... ]" : "[ ENTER SERVER → ]"}
-            </button>
+              {authMode === "register" && (
+                <>
+                  <label className={classes.inputLabel} htmlFor="server-invite">
+                    SERVER_INVITE_PASSKEY // [FRIEND GROUP CODE]
+                  </label>
+                  <input
+                    id="server-invite"
+                    type="text"
+                    className={classes.usernameInput}
+                    placeholder="Enter friend group code (if required)"
+                    value={serverInviteCode}
+                    onChange={(e) => setServerInviteCode(e.target.value)}
+                    aria-label="Server invite passkey"
+                  />
+                </>
+              )}
+
+              {(authError || error) && (
+                <div className={classes.errorBanner} role="alert">
+                  <span>[!]</span> {authError || error}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                className={classes.usernameBtn}
+                disabled={!username.trim() || !password || authSubmitting}
+              >
+                {authSubmitting
+                  ? "[ VERIFYING CREDENTIALS... ]"
+                  : authMode === "login"
+                  ? "[ INITIALIZE SESSION → ]"
+                  : "[ CREATE OPERATOR ID → ]"}
+              </button>
+            </form>
 
             <div className={classes.terminalFooter}>
-              REDIS_PUBSUB: ACTIVE // KAFKA_STREAM: ONLINE // PROTOCOL: WS_V2
+              DATABASE: POSTGRESQL // AUTH: SALTED_SCRYPT // PROTOCOL: WS_V2
             </div>
           </div>
         </div>
@@ -198,9 +377,11 @@ export default function Page() {
   }
 
   const activeMinutes = Math.round(onlineUsers.length);
+  const currentActiveRoom = channels.find((c) => c.slug === activeChannel);
 
   return (
     <div className={classes.app} data-theme={theme}>
+      {/* ---------- Sidebar ---------- */}
       <aside className={classes.sidebar} aria-label="Channels">
         <div className={classes.brand}>
           <div className={classes.brandLeft}>
@@ -217,18 +398,43 @@ export default function Page() {
         </div>
 
         <div className={classes.channelGroup}>
-          <div className={classes.channelGroupLabel}>[ TEXT CHANNELS ]</div>
+          <div className={classes.channelGroupHeader}>
+            <div className={classes.channelGroupLabel}>[ TEXT CHANNELS ]</div>
+            <button
+              type="button"
+              className={classes.addChannelBtn}
+              onClick={() => {
+                setShowCreateModal(true);
+                setCreateError(null);
+              }}
+              title="Create new channel"
+              aria-label="Create new channel"
+            >
+              [+]
+            </button>
+          </div>
+
           {channels.map((ch) => {
             const active = ch.slug === activeChannel;
+            const isLocked = ch.isPrivate && !ch.isMember;
+
             return (
               <button
                 key={ch.slug}
                 className={`${classes.channel} ${active ? classes.channelActive : ""}`}
-                onClick={() => switchChannel(ch.slug)}
+                onClick={() => handleChannelClick(ch)}
                 aria-current={active ? "true" : undefined}
               >
                 <span className={classes.channelHash}>#</span>
                 <span className={classes.channelName}>{ch.name}</span>
+                {ch.isPrivate && (
+                  <span
+                    className={classes.channelLockIcon}
+                    title={isLocked ? "Code-protected channel (click to unlock)" : "Private channel (unlocked)"}
+                  >
+                    {isLocked ? "🔒" : "🔓"}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -251,12 +457,16 @@ export default function Page() {
         </div>
       </aside>
 
+      {/* ---------- Main Chat Area ---------- */}
       <main className={classes.chat}>
         <header className={classes.chatHeader}>
           <div className={classes.chatHeaderMain}>
             <div className={classes.chatTitle}>
               <span className={classes.channelHash}>#</span>
               {channelTitle(activeChannel)}
+              {currentActiveRoom?.isPrivate && (
+                <span style={{ fontSize: "14px", marginLeft: "4px" }}>🔒</span>
+              )}
             </div>
             <div className={classes.chatTopic}>
               [{activeMinutes} {activeMinutes === 1 ? "OPERATOR" : "OPERATORS"} ONLINE]
@@ -350,6 +560,7 @@ export default function Page() {
         </div>
       </main>
 
+      {/* ---------- Right Sidebar (Members Directory) ---------- */}
       <aside className={classes.members} aria-label="Members">
         <div className={classes.membersHeader}>[ DIRECTORY // {onlineUsers.length} ONLINE ]</div>
         <div className={classes.membersSection}>[ ACTIVE OPERATORS ]</div>
@@ -364,6 +575,189 @@ export default function Page() {
           ))
         )}
       </aside>
+
+      {/* ---------- Modal: Create Dynamic Channel ---------- */}
+      {showCreateModal && (
+        <div className={classes.modalOverlay} role="dialog" aria-modal="true">
+          <div className={classes.modalWindow}>
+            <div className={classes.windowTitleBar}>
+              <div className={classes.windowTitle}>
+                <span className={classes.windowPrompt}>&gt;_</span> SYS://CHANNEL_CREATOR
+              </div>
+              <div className={classes.windowControls}>
+                <button
+                  type="button"
+                  className={`${classes.windowBtn} ${classes.windowBtnClose}`}
+                  onClick={() => setShowCreateModal(false)}
+                  aria-label="Close modal"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div className={classes.modalBody}>
+              <form onSubmit={handleCreateChannelSubmit}>
+                <label className={classes.inputLabel} htmlFor="new-channel-name">
+                  CHANNEL_NAME // [REQUIRED]
+                </label>
+                <input
+                  id="new-channel-name"
+                  className={classes.usernameInput}
+                  placeholder="e.g. gaming-hub"
+                  value={channelName}
+                  onChange={(e) => setChannelName(e.target.value)}
+                  maxLength={50}
+                  required
+                  autoFocus
+                />
+
+                <label className={classes.inputLabel} htmlFor="new-channel-slug">
+                  CHANNEL_SLUG // [OPTIONAL IDENTIFIER]
+                </label>
+                <input
+                  id="new-channel-slug"
+                  className={classes.usernameInput}
+                  placeholder="Auto-generated if left blank"
+                  value={channelSlug}
+                  onChange={(e) => setChannelSlug(e.target.value)}
+                  maxLength={50}
+                />
+
+                <label className={classes.inputLabel}>
+                  ACCESS_POLICY //
+                </label>
+                <div className={classes.typeSelector}>
+                  <button
+                    type="button"
+                    className={`${classes.typeBtn} ${!channelIsPrivate ? classes.typeBtnActive : ""}`}
+                    onClick={() => setChannelIsPrivate(false)}
+                  >
+                    [ PUBLIC CHANNEL ]
+                  </button>
+                  <button
+                    type="button"
+                    className={`${classes.typeBtn} ${channelIsPrivate ? classes.typeBtnActive : ""}`}
+                    onClick={() => setChannelIsPrivate(true)}
+                  >
+                    [ 🔒 CODE-PROTECTED ]
+                  </button>
+                </div>
+
+                {channelIsPrivate && (
+                  <>
+                    <label className={classes.inputLabel} htmlFor="channel-invite-code">
+                      CHANNEL_INVITE_PASSKEY // [SHARE WITH INVITED FRIENDS]
+                    </label>
+                    <input
+                      id="channel-invite-code"
+                      className={classes.usernameInput}
+                      placeholder="e.g. secret_gamers_2026"
+                      value={channelInviteCode}
+                      onChange={(e) => setChannelInviteCode(e.target.value)}
+                      maxLength={50}
+                      required={channelIsPrivate}
+                    />
+                  </>
+                )}
+
+                {createError && (
+                  <div className={classes.errorBanner} role="alert">
+                    <span>[!]</span> {createError}
+                  </div>
+                )}
+
+                <div className={classes.channelModalBtns}>
+                  <button
+                    type="button"
+                    className={classes.cancelBtn}
+                    onClick={() => setShowCreateModal(false)}
+                  >
+                    [ CANCEL ]
+                  </button>
+                  <button
+                    type="submit"
+                    className={classes.confirmBtn}
+                    disabled={!channelName.trim() || createSubmitting}
+                  >
+                    {createSubmitting ? "[ CREATING... ]" : "[ INITIALIZE CHANNEL ↵ ]"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---------- Modal: Unlock Code-Protected Channel ---------- */}
+      {targetUnlockChannel && (
+        <div className={classes.modalOverlay} role="dialog" aria-modal="true">
+          <div className={classes.modalWindow}>
+            <div className={classes.windowTitleBar}>
+              <div className={classes.windowTitle}>
+                <span className={classes.windowPrompt}>&gt;_</span> SYS://ACCESS_VERIFICATION
+              </div>
+              <div className={classes.windowControls}>
+                <button
+                  type="button"
+                  className={`${classes.windowBtn} ${classes.windowBtnClose}`}
+                  onClick={() => setTargetUnlockChannel(null)}
+                  aria-label="Close modal"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div className={classes.modalBody}>
+              <div className={classes.modalPrompt}>
+                CHANNEL <strong>#{targetUnlockChannel.name}</strong> IS RESTRICTED.
+                <br />
+                ENTER THE CHANNEL PASSKEY TO GAIN PERMANENT ACCESS.
+              </div>
+
+              <form onSubmit={handleUnlockSubmit}>
+                <label className={classes.inputLabel} htmlFor="unlock-passkey">
+                  CHANNEL_PASSKEY //
+                </label>
+                <input
+                  id="unlock-passkey"
+                  type="password"
+                  className={classes.usernameInput}
+                  placeholder="Enter invite passkey..."
+                  value={unlockPasskey}
+                  onChange={(e) => setUnlockPasskey(e.target.value)}
+                  autoFocus
+                  required
+                />
+
+                {unlockError && (
+                  <div className={classes.errorBanner} role="alert">
+                    <span>[!]</span> {unlockError}
+                  </div>
+                )}
+
+                <div className={classes.channelModalBtns}>
+                  <button
+                    type="button"
+                    className={classes.cancelBtn}
+                    onClick={() => setTargetUnlockChannel(null)}
+                  >
+                    [ CANCEL ]
+                  </button>
+                  <button
+                    type="submit"
+                    className={classes.confirmBtn}
+                    disabled={!unlockPasskey.trim() || unlockSubmitting}
+                  >
+                    {unlockSubmitting ? "[ VERIFYING... ]" : "[ UNLOCK & ENTER → ]"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

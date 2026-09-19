@@ -66,6 +66,14 @@
   padding: 14px 12px;
 }
 
+.channelGroupHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  padding: 0 4px;
+}
+
 .channelGroupLabel {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -73,8 +81,36 @@
   letter-spacing: 0.5px;
   color: var(--text-secondary);
   text-transform: uppercase;
-  margin-bottom: 10px;
-  padding-left: 4px;
+}
+
+.addChannelBtn {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 900;
+  background: var(--accent);
+  color: #000000;
+  border: 1.5px solid #000000;
+  box-shadow: 1px 1px 0px #000000;
+  padding: 2px 7px;
+  cursor: pointer;
+  transition: all 0.1s ease;
+}
+
+.addChannelBtn:hover {
+  background: var(--accent-hover);
+  box-shadow: 2px 2px 0px #000000;
+  transform: translate(-1px, -1px);
+}
+
+.addChannelBtn:active {
+  box-shadow: 0px 0px 0px #000000;
+  transform: translate(1px, 1px);
+}
+
+.channelLockIcon {
+  font-size: 11px;
+  margin-left: auto;
+  opacity: 0.85;
 }
 
 .channel {
@@ -871,6 +907,220 @@
 @keyframes blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
+}
+
+/* ---------- Auth Mode Tabs & Password Input ---------- */
+
+.authTabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.authTab {
+  padding: 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 800;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: var(--border-mid);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: all 0.1s ease;
+}
+
+.authTab:hover {
+  background: var(--hover-bg);
+}
+
+.authTabActive {
+  background: var(--accent);
+  color: #000000;
+  border-color: #000000;
+  box-shadow: var(--shadow-sm);
+}
+
+.passwordWrapper {
+  position: relative;
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.passwordWrapper .usernameInput {
+  margin-bottom: 0;
+  padding-right: 56px;
+}
+
+.passwordToggle {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--bg-tertiary);
+  border: 1.5px solid #000000;
+  box-shadow: 1px 1px 0px #000000;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  padding: 3px 6px;
+  cursor: pointer;
+}
+
+.passwordToggle:hover {
+  background: var(--hover-bg);
+}
+
+/* ---------- Modal Dialogs (Channel Creator & Unlock) ---------- */
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: 16px;
+}
+
+.modalWindow {
+  background: var(--bg-secondary);
+  border: var(--border-thick);
+  box-shadow: var(--shadow-xl);
+  width: 100%;
+  max-width: 440px;
+  overflow: hidden;
+}
+
+.modalBody {
+  padding: 24px;
+}
+
+.modalPrompt {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+  text-transform: uppercase;
+}
+
+.typeSelector {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.typeBtn {
+  padding: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: var(--border-mid);
+  cursor: pointer;
+  transition: all 0.1s ease;
+}
+
+.typeBtn:hover {
+  background: var(--hover-bg);
+}
+
+.typeBtnActive {
+  background: var(--accent-cyan);
+  color: #000000;
+  border-color: #000000;
+  box-shadow: var(--shadow-sm);
+}
+
+.channelModalBtns {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.cancelBtn {
+  flex: 1;
+  height: 48px;
+  border: var(--border-mid);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.1s ease;
+}
+
+.cancelBtn:hover {
+  background: var(--hover-bg);
+}
+
+.confirmBtn {
+  flex: 1.2;
+  height: 48px;
+  border: var(--border-thick);
+  background: var(--accent);
+  color: #000000;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.1s ease;
+}
+
+.confirmBtn:hover:not(:disabled) {
+  background: var(--accent-hover);
+  box-shadow: var(--shadow-md);
+  transform: translate(-1px, -1px);
+}
+
+.confirmBtn:active:not(:disabled) {
+  box-shadow: none;
+  transform: translate(1px, 1px);
+}
+
+.confirmBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  box-shadow: none;
+}
+
+/* ---------- Session Loader ---------- */
+
+.loaderContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  width: 100vw;
+  background: var(--bg-primary);
+}
+
+.loaderBox {
+  border: var(--border-thick);
+  background: var(--bg-secondary);
+  box-shadow: var(--shadow-lg);
+  padding: 28px 36px;
+  text-align: center;
+}
+
+.loaderText {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: 0.5px;
 }
 
 @media (max-width: 960px) {

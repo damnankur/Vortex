@@ -13,12 +13,14 @@ enum RoomType {
 }
 
 model User {
-  id          String           @id @default(uuid())
-  username    String           @unique @db.VarChar(50)
-  createdAt   DateTime         @default(now()) @map("created_at")
-  updatedAt   DateTime         @updatedAt @map("updated_at")
-  memberships RoomMembership[]
-  messages    Message[]
+  id           String           @id @default(uuid())
+  username     String           @unique @db.VarChar(50)
+  passwordHash String?          @map("password_hash")
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+  memberships  RoomMembership[]
+  messages     Message[]
+  createdRooms Room[]           @relation("CreatedRooms")
 
   @@map("users")
 }
@@ -28,6 +30,10 @@ model Room {
   slug        String           @unique @db.VarChar(50)
   name        String           @db.VarChar(100)
   type        RoomType         @default(CHANNEL)
+  isPrivate   Boolean          @default(false) @map("is_private")
+  inviteCode  String?          @map("invite_code") @db.VarChar(50)
+  createdById String?          @map("created_by_id")
+  createdBy   User?            @relation("CreatedRooms", fields: [createdById], references: [id], onDelete: SetNull)
   createdAt   DateTime         @default(now()) @map("created_at")
   updatedAt   DateTime         @updatedAt @map("updated_at")
   memberships RoomMembership[]

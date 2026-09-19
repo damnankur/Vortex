@@ -19,6 +19,8 @@ export interface CurrentUser {
 export interface Channel {
   slug: string;
   name: string;
+  isPrivate?: boolean;
+  isMember?: boolean;
 }
 
 export interface PresenceUser {
@@ -28,8 +30,17 @@ export interface PresenceUser {
 }
 
 interface ISocketContext {
+  login: (username: string, password: string) => Promise<void>;
+  register: (username: string, password: string, serverInviteCode?: string) => Promise<void>;
   join: (username: string) => Promise<void>;
   reset: () => void;
+  createChannel: (
+    name: string,
+    slug?: string,
+    isPrivate?: boolean,
+    inviteCode?: string
+  ) => Promise<Channel>;
+  joinChannelWithCode: (slug: string, inviteCode: string) => Promise<void>;
   sendMessage: (text: string) => void;
   emitTyping: (typing: boolean) => void;
   switchChannel: (slug: string) => void;
@@ -42,6 +53,7 @@ interface ISocketContext {
   joined: boolean;
   currentUser: CurrentUser | null;
   error: string | null;
+  loadingAuth: boolean;
 }
 
 const SocketContext = React.createContext<ISocketContext | null>(null);
@@ -67,6 +79,7 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
   const [activeChannel, setActiveChannel] = useState(DEFAULT_ROOM);
   const [onlineUsers, setOnlineUsers] = useState<PresenceUser[]>([]);
   const [typingByRoom, setTypingByRoom] = useState<Record<string, string[]>>({});
+  const [loadingAuth, setLoadingAuth] = useState(true);
 
   const socketRef = useRef<Socket | null>(null);
   const tokenRef = useRef<string | null>(null);
@@ -76,43 +89,53 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
 
   const baseUrl = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:5000";
 
-  const fetchHistory = useCallback(async (roomId: string, token: string) => {
-    const res = await fetch(
-      `${baseUrl}/messages?roomId=${encodeURIComponent(roomId)}&limit=50`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    if (!res.ok) throw new Error("failed to load history");
-    const data = (await res.json()) as { messages: Message[] };
-    setMessagesByRoom((prev) => ({ ...prev, [roomId]: data.messages }));
-  }, [baseUrl]);
-
-  const fetchChannels = useCallback(async (token: string) => {
-    const res = await fetch(`${baseUrl}/channels`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error("failed to load channels");
-    const data = (await res.json()) as { channels: Channel[] };
-    setChannels(data.channels);
-  }, [baseUrl]);
-
-  const join = useCallback(
-    async (username: string) => {
-      setError(null);
-      const res = await fetch(`${baseUrl}/auth/join`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username }),
-      });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error || "join failed");
+  const fetchHistory = useCallback(
+    async (roomId: string, token: string) => {
+      try {
+        const res = await fetch(
+          `${baseUrl}/messages?roomId=${encodeURIComponent(roomId)}&limit=50`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || "Failed to load messages");
+        }
+        const data = (await res.json()) as { messages: Message[] };
+        setMessagesByRoom((prev) => ({ ...prev, [roomId]: data.messages }));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load messages");
       }
-      const data = (await res.json()) as { token: string; user: CurrentUser };
-      setCurrentUser(data.user);
-      tokenRef.current = data.token;
+    },
+    [baseUrl]
+  );
+
+  const fetchChannels = useCallback(
+    async (token: string) => {
+      try {
+        const res = await fetch(`${baseUrl}/channels`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error("Failed to load channels");
+        const data = (await res.json()) as { channels: Channel[] };
+        setChannels(data.channels);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load channels");
+      }
+    },
+    [baseUrl]
+  );
+
+  const initSocket = useCallback(
+    (token: string, user: CurrentUser) => {
+      setCurrentUser(user);
+      tokenRef.current = token;
+
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
 
       const _socket = io(baseUrl, {
-        auth: { token: data.token },
+        auth: { token },
         transports: ["websocket"],
         reconnection: true,
         reconnectionAttempts: 10,
@@ -135,15 +158,13 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
 
       _socket.on("connect", () => {
         setConnected(true);
-        fetchChannels(data.token).catch((err) =>
-          setError(err instanceof Error ? err.message : "failed to load channels")
-        );
-        fetchHistory(DEFAULT_ROOM, data.token).catch((err) =>
-          setError(err instanceof Error ? err.message : "failed to load history")
-        );
+        fetchChannels(token).catch(() => undefined);
+        fetchHistory(DEFAULT_ROOM, token).catch(() => undefined);
       });
+
       _socket.on("disconnect", () => setConnected(false));
       _socket.on("connect_error", () => setConnected(false));
+
       _socket.on("message", (raw: string) => {
         try {
           upsertMessage(JSON.parse(raw) as Message);
@@ -151,11 +172,20 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
           // ignore malformed frames
         }
       });
+
       _socket.on("presence", (payload: { roomId: string; users: PresenceUser[] }) => {
         if (payload.roomId === activeRoomRef.current) {
           setOnlineUsers(payload.users);
         }
       });
+
+      _socket.on("channel:created", (newCh: Channel) => {
+        setChannels((prev) => {
+          if (prev.some((c) => c.slug === newCh.slug)) return prev;
+          return [...prev, { ...newCh, isMember: !newCh.isPrivate }];
+        });
+      });
+
       _socket.on("typing", (payload: { roomId: string; username: string; typing: boolean }) => {
         setTypingByRoom((prev) => {
           const current = prev[payload.roomId] || [];
@@ -179,6 +209,7 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
           return { ...prev, [payload.roomId]: next };
         });
       });
+
       _socket.on("error", (msg: string) => setError(msg));
 
       socketRef.current = _socket;
@@ -186,7 +217,151 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
     [baseUrl, fetchChannels, fetchHistory]
   );
 
+  // Auto-login from saved token on mount
+  useEffect(() => {
+    const savedToken = localStorage.getItem("vortex_token");
+    if (!savedToken) {
+      setLoadingAuth(false);
+      return;
+    }
+
+    fetch(`${baseUrl}/auth/me`, {
+      headers: { Authorization: `Bearer ${savedToken}` },
+    })
+      .then(async (res) => {
+        if (!res.ok) throw new Error();
+        const data = (await res.json()) as { user: CurrentUser };
+        initSocket(savedToken, data.user);
+      })
+      .catch(() => {
+        localStorage.removeItem("vortex_token");
+      })
+      .finally(() => {
+        setLoadingAuth(false);
+      });
+  }, [baseUrl, initSocket]);
+
+  const login = useCallback(
+    async (username: string, password: string) => {
+      setError(null);
+      const res = await fetch(`${baseUrl}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error || "Login failed");
+      }
+      const data = (await res.json()) as { token: string; user: CurrentUser };
+      localStorage.setItem("vortex_token", data.token);
+      initSocket(data.token, data.user);
+    },
+    [baseUrl, initSocket]
+  );
+
+  const register = useCallback(
+    async (username: string, password: string, serverInviteCode?: string) => {
+      setError(null);
+      const res = await fetch(`${baseUrl}/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password, serverInviteCode }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error || "Registration failed");
+      }
+      const data = (await res.json()) as { token: string; user: CurrentUser };
+      localStorage.setItem("vortex_token", data.token);
+      initSocket(data.token, data.user);
+    },
+    [baseUrl, initSocket]
+  );
+
+  const join = useCallback(
+    async (username: string) => {
+      setError(null);
+      const res = await fetch(`${baseUrl}/auth/join`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error || "Join failed");
+      }
+      const data = (await res.json()) as { token: string; user: CurrentUser };
+      localStorage.setItem("vortex_token", data.token);
+      initSocket(data.token, data.user);
+    },
+    [baseUrl, initSocket]
+  );
+
+  const createChannel = useCallback(
+    async (
+      name: string,
+      slug?: string,
+      isPrivate?: boolean,
+      inviteCode?: string
+    ): Promise<Channel> => {
+      const token = tokenRef.current;
+      if (!token) throw new Error("Not authenticated");
+
+      const res = await fetch(`${baseUrl}/channels`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ name, slug, isPrivate, inviteCode }),
+      });
+
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error || "Failed to create channel");
+      }
+
+      const data = (await res.json()) as { channel: Channel };
+      setChannels((prev) => {
+        if (prev.some((c) => c.slug === data.channel.slug)) return prev;
+        return [...prev, data.channel];
+      });
+      return data.channel;
+    },
+    [baseUrl]
+  );
+
+  const joinChannelWithCode = useCallback(
+    async (slug: string, inviteCode: string) => {
+      const token = tokenRef.current;
+      if (!token) throw new Error("Not authenticated");
+
+      const res = await fetch(`${baseUrl}/channels/${encodeURIComponent(slug)}/join`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ inviteCode }),
+      });
+
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error || "Failed to join channel");
+      }
+
+      setChannels((prev) =>
+        prev.map((c) => (c.slug === slug ? { ...c, isMember: true } : c))
+      );
+      switchChannel(slug);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [baseUrl]
+  );
+
   const reset = useCallback(() => {
+    localStorage.removeItem("vortex_token");
     socketRef.current?.disconnect();
     socketRef.current = null;
     tokenRef.current = null;
@@ -253,8 +428,12 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
   return (
     <SocketContext.Provider
       value={{
+        login,
+        register,
         join,
         reset,
+        createChannel,
+        joinChannelWithCode,
         sendMessage,
         emitTyping,
         switchChannel,
@@ -267,6 +446,7 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
         joined: !!currentUser,
         currentUser,
         error,
+        loadingAuth,
       }}
     >
       {children}
