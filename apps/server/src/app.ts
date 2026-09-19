@@ -495,6 +495,125 @@ export async function createApp() {
     }
   });
 
+  // ---------- Leave / Delete Server ----------
+  app.post("/servers/:serverSlug/leave", authRequired, async (req, res) => {
+    const { serverSlug } = req.params;
+    const user = (req as Request & { user: AuthUser }).user;
+
+    if (serverSlug === "vortex-main") {
+      res.status(400).json({ error: "Cannot leave the default community lobby [VORTEX // MAIN]" });
+      return;
+    }
+
+    try {
+      const server = await prisma.server.findUnique({
+        where: { slug: serverSlug },
+        include: {
+          memberships: {
+            where: { userId: user.userId },
+          },
+        },
+      });
+
+      if (!server) {
+        res.status(404).json({ error: "Server not found" });
+        return;
+      }
+
+      // If operator is the owner, leaving deletes the server
+      if (server.ownerId === user.userId) {
+        await prisma.server.delete({
+          where: { id: server.id },
+        });
+
+        logger.info({ serverSlug, userId: user.userId }, "Server owner left and deleted server");
+        res.json({
+          success: true,
+          action: "DELETED",
+          message: "Server deleted successfully",
+          serverSlug,
+        });
+        return;
+      }
+
+      // Check if user is an enrolled member
+      if (server.memberships.length === 0) {
+        res.status(400).json({ error: "You are not a member of this server" });
+        return;
+      }
+
+      // Delete server membership
+      await prisma.serverMembership.deleteMany({
+        where: {
+          serverId: server.id,
+          userId: user.userId,
+        },
+      });
+
+      // Clean up any private channel memberships within this server for this user
+      const serverRooms = await prisma.room.findMany({
+        where: { serverId: server.id },
+        select: { id: true },
+      });
+      if (serverRooms.length > 0) {
+        await prisma.roomMembership.deleteMany({
+          where: {
+            userId: user.userId,
+            roomId: { in: serverRooms.map((r) => r.id) },
+          },
+        });
+      }
+
+      logger.info({ serverSlug, userId: user.userId }, "User left server successfully");
+      res.json({
+        success: true,
+        action: "LEFT",
+        message: "Left server successfully",
+        serverSlug,
+      });
+    } catch (err) {
+      logger.error({ err, serverSlug }, "leave server failed");
+      res.status(500).json({ error: "Failed to leave server" });
+    }
+  });
+
+  // ---------- Delete Server (Owner Only) ----------
+  app.delete("/servers/:serverSlug", authRequired, async (req, res) => {
+    const { serverSlug } = req.params;
+    const user = (req as Request & { user: AuthUser }).user;
+
+    if (serverSlug === "vortex-main") {
+      res.status(400).json({ error: "Cannot delete the default community server" });
+      return;
+    }
+
+    try {
+      const server = await prisma.server.findUnique({
+        where: { slug: serverSlug },
+      });
+
+      if (!server) {
+        res.status(404).json({ error: "Server not found" });
+        return;
+      }
+
+      if (server.ownerId !== user.userId) {
+        res.status(403).json({ error: "Only the server owner can delete this server" });
+        return;
+      }
+
+      await prisma.server.delete({
+        where: { id: server.id },
+      });
+
+      logger.info({ serverSlug, userId: user.userId }, "Server deleted by owner");
+      res.json({ success: true, message: "Server deleted successfully", serverSlug });
+    } catch (err) {
+      logger.error({ err, serverSlug }, "delete server failed");
+      res.status(500).json({ error: "Failed to delete server" });
+    }
+  });
+
   // ---------- Channels List ----------
   app.get("/channels", authRequired, async (req, res) => {
     const user = (req as Request & { user: AuthUser }).user;

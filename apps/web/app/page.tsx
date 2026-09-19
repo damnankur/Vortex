@@ -84,6 +84,7 @@ export default function Page() {
     switchServer,
     createServer,
     joinServerByCode,
+    leaveServer,
     createChannel,
     joinChannelWithCode,
     sendMessage,
@@ -129,6 +130,11 @@ export default function Page() {
   const [joinServerInviteCode, setJoinServerInviteCode] = useState("");
   const [joinServerSubmitting, setJoinServerSubmitting] = useState(false);
   const [joinServerModalError, setJoinServerModalError] = useState<string | null>(null);
+
+  // Leave server modal state
+  const [showLeaveConfirmModal, setShowLeaveConfirmModal] = useState(false);
+  const [leaveSubmitting, setLeaveSubmitting] = useState(false);
+  const [leaveError, setLeaveError] = useState<string | null>(null);
 
   // Invite code copied feedback state
   const [copiedCode, setCopiedCode] = useState(false);
@@ -230,6 +236,21 @@ export default function Page() {
       setJoinServerModalError(err instanceof Error ? err.message : "Failed to join server");
     } finally {
       setJoinServerSubmitting(false);
+    }
+  };
+
+  // Handle Leave / Delete Server
+  const handleConfirmLeaveServer = async () => {
+    if (!activeServer) return;
+    setLeaveSubmitting(true);
+    setLeaveError(null);
+    try {
+      await leaveServer(activeServer.slug);
+      setShowLeaveConfirmModal(false);
+    } catch (err) {
+      setLeaveError(err instanceof Error ? err.message : "Failed to leave server");
+    } finally {
+      setLeaveSubmitting(false);
     }
   };
 
@@ -557,21 +578,37 @@ export default function Page() {
                 + SERVER
               </button>
             </div>
-            <button
-              type="button"
-              className={classes.serverInviteBtn}
-              onClick={() => {
-                if (typeof navigator !== "undefined" && navigator.clipboard) {
-                  navigator.clipboard.writeText(activeServer.inviteCode);
-                  setCopiedCode(true);
-                  setTimeout(() => setCopiedCode(false), 2000);
-                }
-              }}
-              title="Click to copy server invite code"
-            >
-              <span>INVITE: {activeServer.inviteCode}</span>
-              <span>{copiedCode ? "✓ COPIED" : "📋"}</span>
-            </button>
+            <div className={classes.serverMetaActionsRow}>
+              <button
+                type="button"
+                className={classes.serverInviteBtn}
+                onClick={() => {
+                  if (typeof navigator !== "undefined" && navigator.clipboard) {
+                    navigator.clipboard.writeText(activeServer.inviteCode);
+                    setCopiedCode(true);
+                    setTimeout(() => setCopiedCode(false), 2000);
+                  }
+                }}
+                title="Click to copy server invite code"
+              >
+                <span>INVITE: {activeServer.inviteCode}</span>
+                <span>{copiedCode ? "✓" : "📋"}</span>
+              </button>
+              {activeServer.slug !== "vortex-main" && (
+                <button
+                  type="button"
+                  className={classes.serverLeaveBtn}
+                  onClick={() => {
+                    setLeaveError(null);
+                    setShowLeaveConfirmModal(true);
+                  }}
+                  title={activeServer.isOwner ? "Delete this server" : "Leave this server"}
+                  aria-label={activeServer.isOwner ? "Delete server" : "Leave server"}
+                >
+                  {activeServer.isOwner ? "⏻ DELETE" : "⏻ LEAVE"}
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -1157,6 +1194,73 @@ export default function Page() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---------- Modal: Confirm Leave / Delete Server ---------- */}
+      {showLeaveConfirmModal && activeServer && (
+        <div className={classes.modalOverlay} role="dialog" aria-modal="true">
+          <div className={classes.modalWindow}>
+            <div className={classes.windowTitleBar}>
+              <div className={classes.windowTitle}>
+                <span className={classes.windowPrompt}>&gt;_</span> SYS://
+                {activeServer.isOwner ? "DELETE_SERVER" : "LEAVE_SERVER"}
+              </div>
+              <div className={classes.windowControls}>
+                <button
+                  type="button"
+                  className={`${classes.windowBtn} ${classes.windowBtnClose}`}
+                  onClick={() => setShowLeaveConfirmModal(false)}
+                  aria-label="Close modal"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div className={classes.modalBody}>
+              <div className={classes.modalPrompt}>
+                <span style={{ color: "var(--text-primary)", fontWeight: 800 }}>
+                  {activeServer.isOwner
+                    ? `CONFIRM PERMANENT TERMINATION OF [${activeServer.name.toUpperCase()}]?`
+                    : `CONFIRM DEPARTURE FROM [${activeServer.name.toUpperCase()}]?`}
+                </span>
+                <br />
+                <br />
+                {activeServer.isOwner
+                  ? "WARNING: YOU ARE THE REALM OWNER. TERMINATING THIS SERVER WILL PURGE ALL CHANNELS, MEMBERSHIPS, AND DISCUSSIONS. YOU WILL BE REROUTED TO VORTEX // MAIN."
+                  : "YOU WILL BE DISCONNECTED FROM ALL ITS CHANNELS AND CEASE TO RECEIVE DISPATCHES UNTIL RE-INVITED. YOU WILL BE SAFELY RETURNED TO VORTEX // MAIN."}
+              </div>
+
+              {leaveError && (
+                <div className={classes.errorBanner} role="alert">
+                  <span>[!]</span> {leaveError}
+                </div>
+              )}
+
+              <div className={classes.channelModalBtns}>
+                <button
+                  type="button"
+                  className={classes.cancelBtn}
+                  onClick={() => setShowLeaveConfirmModal(false)}
+                >
+                  [ CANCEL ]
+                </button>
+                <button
+                  type="button"
+                  className={classes.serverDangerConfirmBtn}
+                  onClick={handleConfirmLeaveServer}
+                  disabled={leaveSubmitting}
+                >
+                  {leaveSubmitting
+                    ? "[ COMMITTING... ]"
+                    : activeServer.isOwner
+                    ? "[ ⏻ TERMINATE SERVER ]"
+                    : "[ ⏻ LEAVE SERVER ]"}
+                </button>
+              </div>
             </div>
           </div>
         </div>

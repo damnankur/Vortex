@@ -63,6 +63,7 @@ interface ISocketContext {
   switchServer: (serverSlug: string) => Promise<void>;
   createServer: (name: string, description?: string) => Promise<Server>;
   joinServerByCode: (inviteCode: string) => Promise<Server>;
+  leaveServer: (serverSlug: string) => Promise<void>;
   // Channel actions
   createChannel: (
     name: string,
@@ -541,7 +542,10 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
 
   const switchServer = useCallback(
     async (serverSlug: string) => {
-      const targetServer = servers.find((s) => s.slug === serverSlug);
+      const targetServer =
+        servers.find((s) => s.slug === serverSlug) ||
+        servers.find((s) => s.slug === "vortex-main") ||
+        servers[0];
       if (!targetServer) return;
       setActiveServer(targetServer);
       activeServerRef.current = targetServer;
@@ -652,6 +656,40 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
       return data.server;
     },
     [baseUrl, fetchChannels, fetchHistory, fetchServerMembers]
+  );
+
+  const leaveServer = useCallback(
+    async (serverSlug: string): Promise<void> => {
+      const token = tokenRef.current;
+      if (!token) throw new Error("Not authenticated");
+      if (serverSlug === "vortex-main") {
+        throw new Error("Cannot leave the default community server");
+      }
+
+      const res = await fetch(
+        `${baseUrl}/servers/${encodeURIComponent(serverSlug)}/leave`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to leave server");
+      }
+
+      // Update servers state
+      setServers((prev) => prev.filter((s) => s.slug !== serverSlug));
+
+      // If active server was the left server, switch to vortex-main
+      if (activeServerRef.current?.slug === serverSlug) {
+        await switchServer("vortex-main");
+      }
+    },
+    [baseUrl, switchServer]
   );
 
   const createChannel = useCallback(
@@ -828,6 +866,7 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
         switchServer,
         createServer,
         joinServerByCode,
+        leaveServer,
         createChannel,
         joinChannelWithCode,
         sendMessage,
