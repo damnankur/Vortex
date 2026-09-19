@@ -214,19 +214,7 @@ export default function Page() {
   const formatTime = (iso: string) =>
     new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
-  // 1. Session Restoration Loading Screen
-  if (loadingAuth) {
-    return (
-      <div className={classes.loaderContainer} data-theme={theme}>
-        <div className={classes.loaderBox}>
-          <div className={classes.emptyIcon}>&gt;_</div>
-          <div className={classes.loaderText}>[ VERIFYING OPERATOR CREDENTIALS... ]</div>
-        </div>
-      </div>
-    );
-  }
-
-  // 2. Brutalist Authentication Screen (Login + Register)
+  // Brutalist Authentication Screen (Login + Register)
   if (!joined) {
     return (
       <div className={classes.usernameModal} data-theme={theme}>

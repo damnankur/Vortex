@@ -79,7 +79,7 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
   const [activeChannel, setActiveChannel] = useState(DEFAULT_ROOM);
   const [onlineUsers, setOnlineUsers] = useState<PresenceUser[]>([]);
   const [typingByRoom, setTypingByRoom] = useState<Record<string, string[]>>({});
-  const [loadingAuth, setLoadingAuth] = useState(true);
+  const [loadingAuth, setLoadingAuth] = useState(false);
 
   const socketRef = useRef<Socket | null>(null);
   const tokenRef = useRef<string | null>(null);
@@ -219,26 +219,42 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
 
   // Auto-login from saved token on mount
   useEffect(() => {
-    const savedToken = localStorage.getItem("vortex_token");
-    if (!savedToken) {
-      setLoadingAuth(false);
-      return;
-    }
-
-    fetch(`${baseUrl}/auth/me`, {
-      headers: { Authorization: `Bearer ${savedToken}` },
-    })
-      .then(async (res) => {
-        if (!res.ok) throw new Error();
-        const data = (await res.json()) as { user: CurrentUser };
-        initSocket(savedToken, data.user);
-      })
-      .catch(() => {
-        localStorage.removeItem("vortex_token");
-      })
-      .finally(() => {
+    try {
+      const savedToken = typeof window !== "undefined" ? localStorage.getItem("vortex_token") : null;
+      if (!savedToken) {
         setLoadingAuth(false);
-      });
+        return;
+      }
+
+      setLoadingAuth(true);
+      const controller = new AbortController();
+      const timer = setTimeout(() => {
+        controller.abort();
+        setLoadingAuth(false);
+      }, 1500);
+
+      fetch(`${baseUrl}/auth/me`, {
+        headers: { Authorization: `Bearer ${savedToken}` },
+        signal: controller.signal,
+      })
+        .then(async (res) => {
+          clearTimeout(timer);
+          if (!res.ok) throw new Error();
+          const data = (await res.json()) as { user: CurrentUser };
+          initSocket(savedToken, data.user);
+        })
+        .catch(() => {
+          clearTimeout(timer);
+          try {
+            localStorage.removeItem("vortex_token");
+          } catch {}
+        })
+        .finally(() => {
+          setLoadingAuth(false);
+        });
+    } catch {
+      setLoadingAuth(false);
+    }
   }, [baseUrl, initSocket]);
 
   const login = useCallback(
