@@ -1,5 +1,5 @@
 "use client";
-import React, { useCallback, useContext, useEffect, useRef, useState } from "react";
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 
 export interface Message {
@@ -38,6 +38,12 @@ export interface Server {
   defaultChannelSlug?: string;
 }
 
+export interface ServerMember {
+  userId: string;
+  username: string;
+  role: string;
+}
+
 export interface PresenceUser {
   userId: string;
   username: string;
@@ -52,6 +58,8 @@ interface ISocketContext {
   // Server actions
   servers: Server[];
   activeServer: Server | null;
+  serverMembers: ServerMember[];
+  serverOnlineUsers: PresenceUser[];
   switchServer: (serverSlug: string) => Promise<void>;
   createServer: (name: string, description?: string) => Promise<Server>;
   joinServerByCode: (inviteCode: string) => Promise<Server>;
@@ -138,6 +146,7 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
   const [error, setError] = useState<string | null>(null);
   const [servers, setServers] = useState<Server[]>([]);
   const [activeServer, setActiveServer] = useState<Server | null>(null);
+  const [serverMembers, setServerMembers] = useState<ServerMember[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [activeChannel, setActiveChannel] = useState(DEFAULT_ROOM);
   const [onlineUsers, setOnlineUsers] = useState<PresenceUser[]>([]);
@@ -262,6 +271,24 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
     [baseUrl]
   );
 
+  const fetchServerMembers = useCallback(
+    async (serverSlug: string, token: string): Promise<ServerMember[]> => {
+      try {
+        const res = await fetch(
+          `${baseUrl}/servers/${encodeURIComponent(serverSlug)}/members`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (!res.ok) throw new Error("Failed to load server members");
+        const data = (await res.json()) as { members: ServerMember[] };
+        setServerMembers(data.members);
+        return data.members;
+      } catch {
+        return [];
+      }
+    },
+    [baseUrl]
+  );
+
   const initSocket = useCallback(
     (token: string, user: CurrentUser) => {
       setCurrentUser(user);
@@ -302,6 +329,7 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
             if (initialServer) {
               setActiveServer(initialServer);
               activeServerRef.current = initialServer;
+              fetchServerMembers(initialServer.slug, token).catch(() => undefined);
               const chList = await fetchChannels(initialServer.slug, token);
               const firstCh = chList[0]?.slug || DEFAULT_ROOM;
               setActiveChannel(firstCh);
@@ -520,6 +548,7 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
 
       const token = tokenRef.current;
       if (token) {
+        fetchServerMembers(targetServer.slug, token).catch(() => undefined);
         const chList = await fetchChannels(targetServer.slug, token);
         if (chList.length > 0 && chList[0]) {
           const firstCh = chList[0].slug;
@@ -535,7 +564,7 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
         }
       }
     },
-    [baseUrl, fetchChannels, fetchHistory, servers]
+    [baseUrl, fetchChannels, fetchHistory, fetchServerMembers, servers]
   );
 
   const createServer = useCallback(
@@ -563,6 +592,7 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
       activeServerRef.current = data.server;
 
       if (token) {
+        fetchServerMembers(data.server.slug, token).catch(() => undefined);
         const chList = await fetchChannels(data.server.slug, token);
         const firstCh = data.server.defaultChannelSlug || chList[0]?.slug || DEFAULT_ROOM;
         setActiveChannel(firstCh);
@@ -576,7 +606,7 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
 
       return data.server;
     },
-    [baseUrl, fetchChannels, fetchHistory]
+    [baseUrl, fetchChannels, fetchHistory, fetchServerMembers]
   );
 
   const joinServerByCode = useCallback(
@@ -607,6 +637,7 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
       activeServerRef.current = data.server;
 
       if (token) {
+        fetchServerMembers(data.server.slug, token).catch(() => undefined);
         const chList = await fetchChannels(data.server.slug, token);
         const firstCh = data.server.defaultChannelSlug || chList[0]?.slug || DEFAULT_ROOM;
         setActiveChannel(firstCh);
@@ -620,7 +651,7 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
 
       return data.server;
     },
-    [baseUrl, fetchChannels, fetchHistory]
+    [baseUrl, fetchChannels, fetchHistory, fetchServerMembers]
   );
 
   const createChannel = useCallback(
@@ -706,6 +737,7 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
     setMessagesByRoom({});
     setServers([]);
     setActiveServer(null);
+    setServerMembers([]);
     setChannels([]);
     setActiveChannel(DEFAULT_ROOM);
     activeRoomRef.current = DEFAULT_ROOM;
@@ -766,6 +798,20 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
     };
   }, []);
 
+  // Filter online users to strictly members of the active server
+  const serverOnlineUsers = useMemo(() => {
+    if (!activeServer) return onlineUsers;
+    const memberIds = new Set(serverMembers.map((m) => m.userId));
+    if (memberIds.size > 0) {
+      return onlineUsers.filter((u) => memberIds.has(u.userId));
+    }
+    // If serverMembers not loaded yet and not vortex-main, only show currentUser if connected
+    if (activeServer.slug !== "vortex-main") {
+      return currentUser ? onlineUsers.filter((u) => u.userId === currentUser.id) : [];
+    }
+    return onlineUsers;
+  }, [activeServer, onlineUsers, serverMembers, currentUser]);
+
   const messages = messagesByRoom[activeChannel] || [];
 
   return (
@@ -777,6 +823,8 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
         reset,
         servers,
         activeServer,
+        serverMembers,
+        serverOnlineUsers,
         switchServer,
         createServer,
         joinServerByCode,
@@ -788,7 +836,7 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
         messages,
         channels,
         activeChannel,
-        onlineUsers,
+        onlineUsers: serverOnlineUsers,
         typingUsers: typingByRoom[activeChannel] || [],
         connected,
         joined: !!currentUser,

@@ -188,6 +188,21 @@ export async function createApp() {
         create: { username },
         update: {},
       });
+
+      // Ensure joining user/persona is added as member to vortex-main
+      const mainServer = await prisma.server.findUnique({
+        where: { slug: "vortex-main" },
+      });
+      if (mainServer) {
+        await prisma.serverMembership.upsert({
+          where: {
+            serverId_userId: { serverId: mainServer.id, userId: user.id },
+          },
+          create: { serverId: mainServer.id, userId: user.id, role: "MEMBER" },
+          update: {},
+        });
+      }
+
       const token = signToken({ userId: user.id, username: user.username });
       res.json({ token, user: { id: user.id, username: user.username } });
     } catch (err) {
@@ -382,6 +397,101 @@ export async function createApp() {
     } catch (err) {
       logger.error({ err }, "join server failed");
       res.status(500).json({ error: "Failed to join server" });
+    }
+  });
+
+  // ---------- Server Members List ----------
+  app.get("/servers/:serverSlug/members", authRequired, async (req, res) => {
+    const { serverSlug } = req.params;
+    const user = (req as Request & { user: AuthUser }).user;
+
+    try {
+      const server = await prisma.server.findUnique({
+        where: { slug: serverSlug },
+        include: {
+          owner: { select: { id: true, username: true } },
+          memberships: {
+            include: {
+              user: { select: { id: true, username: true } },
+            },
+          },
+        },
+      });
+
+      if (!server) {
+        res.status(404).json({ error: "Server not found" });
+        return;
+      }
+
+      // Check if user is a member or owner of the server (vortex-main is open to all authenticated operators)
+      const isMember =
+        server.slug === "vortex-main" ||
+        server.ownerId === user.userId ||
+        server.memberships.some((m) => m.userId === user.userId);
+
+      if (!isMember) {
+        res.status(403).json({ error: "Access denied to server members" });
+        return;
+      }
+
+      const membersMap = new Map<string, { userId: string; username: string; role: string }>();
+
+      // Add owner
+      membersMap.set(server.owner.id, {
+        userId: server.owner.id,
+        username: server.owner.username,
+        role: "OWNER",
+      });
+
+      // Add members from server_memberships
+      for (const m of server.memberships) {
+        membersMap.set(m.user.id, {
+          userId: m.user.id,
+          username: m.user.username,
+          role: m.role,
+        });
+      }
+
+      // If default community server vortex-main, ensure demo bot personas are also included
+      if (server.slug === "vortex-main") {
+        const bots = await prisma.user.findMany({
+          where: {
+            username: {
+              in: [
+                "AnalogKid",
+                "DracoRex",
+                "LunaWave",
+                "NovaWolfe",
+                "OrionPrime",
+                "PixelParker",
+              ],
+            },
+          },
+          select: { id: true, username: true },
+        });
+        for (const b of bots) {
+          if (!membersMap.has(b.id)) {
+            membersMap.set(b.id, {
+              userId: b.id,
+              username: b.username,
+              role: "BOT",
+            });
+          }
+        }
+      }
+
+      if (server.slug === "vortex-main" && !membersMap.has(user.userId)) {
+        membersMap.set(user.userId, {
+          userId: user.userId,
+          username: user.username,
+          role: "MEMBER",
+        });
+      }
+
+      res.json({ members: Array.from(membersMap.values()) });
+    } catch (err) {
+      logger.error({ err, serverSlug }, "fetch server members failed");
+      res.status(500).json({ error: "Failed to fetch server members" });
     }
   });
 

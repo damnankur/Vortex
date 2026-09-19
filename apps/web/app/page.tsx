@@ -80,6 +80,7 @@ export default function Page() {
     reset,
     servers,
     activeServer,
+    serverMembers,
     switchServer,
     createServer,
     joinServerByCode,
@@ -770,16 +771,59 @@ export default function Page() {
       {/* ---------- Right Sidebar (Members Directory) ---------- */}
       <aside className={classes.members} aria-label="Members">
         <div className={classes.membersHeader}>[ DIRECTORY // {onlineUsers.length} ONLINE ]</div>
-        <div className={classes.membersSection}>[ ACTIVE OPERATORS ]</div>
+        <div className={classes.membersSection}>
+          {activeServer ? `[ ${activeServer.name.toUpperCase()} ]` : "[ ACTIVE OPERATORS ]"}
+        </div>
         {onlineUsers.length === 0 ? (
-          <div className={classes.membersEmpty}>NO OTHER OPERATORS DETECTED.</div>
+          <div className={classes.membersEmpty}>NO OPERATORS DETECTED.</div>
         ) : (
-          onlineUsers.map((user) => (
-            <div key={user.userId} className={classes.member}>
-              <span className={classes.memberSquare} />
-              <span className={classes.memberName}>{user.username}</span>
-            </div>
-          ))
+          onlineUsers.map((user) => {
+            const memberInfo = serverMembers.find((m) => m.userId === user.userId);
+            const isOwner =
+              memberInfo?.role === "OWNER" ||
+              (user.userId === currentUser?.id && Boolean(activeServer?.isOwner));
+            const isBot = memberInfo?.role === "BOT";
+            return (
+              <div key={user.userId} className={classes.member}>
+                <span className={classes.memberSquare} />
+                <span className={classes.memberName}>
+                  {user.username}
+                  {user.userId === currentUser?.id ? " (YOU)" : ""}
+                </span>
+                {isOwner && (
+                  <span
+                    style={{
+                      fontSize: "9px",
+                      fontWeight: 900,
+                      padding: "1px 4px",
+                      background: "#FFE600",
+                      color: "#000000",
+                      border: "1px solid #000000",
+                      marginLeft: "auto",
+                      boxShadow: "1px 1px 0px #000000",
+                    }}
+                  >
+                    OWNER
+                  </span>
+                )}
+                {isBot && (
+                  <span
+                    style={{
+                      fontSize: "9px",
+                      fontWeight: 800,
+                      padding: "1px 4px",
+                      background: "var(--bg-secondary)",
+                      color: "var(--text-muted)",
+                      border: "1px solid var(--border-color)",
+                      marginLeft: "auto",
+                    }}
+                  >
+                    BOT
+                  </span>
+                )}
+              </div>
+            );
+          })
         )}
       </aside>
 
