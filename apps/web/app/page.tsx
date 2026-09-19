@@ -539,8 +539,22 @@ export default function Page() {
         {/* Active Server Info & Invite Badge */}
         {activeServer && (
           <div className={classes.serverMetaBar}>
-            <div className={classes.serverMetaName} title={activeServer.name}>
-              {activeServer.name}
+            <div className={classes.serverMetaHeader}>
+              <div className={classes.serverMetaName} title={activeServer.name}>
+                {activeServer.name}
+              </div>
+              <button
+                type="button"
+                className={classes.serverCreateMiniBtn}
+                onClick={() => {
+                  setShowServerModal(true);
+                  setServerModalError(null);
+                }}
+                title="Create a new server realm"
+                aria-label="Create server"
+              >
+                + SERVER
+              </button>
             </div>
             <button
               type="button"

@@ -49,3 +49,4 @@ DO $$ BEGIN
     ALTER TABLE "rooms" ADD CONSTRAINT "rooms_server_id_fkey" FOREIGN KEY ("server_id") REFERENCES "servers"("id") ON DELETE CASCADE ON UPDATE CASCADE;
   END IF;
 END $$;
+
