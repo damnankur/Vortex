@@ -90,7 +90,18 @@ export async function createApp() {
       });
 
       if (existing) {
-        res.status(409).json({ error: "Username already taken" });
+        if (!existing.passwordHash) {
+          // Claim legacy guest handle by setting its password
+          const passwordHash = await hashPassword(cleanPassword);
+          const user = await prisma.user.update({
+            where: { id: existing.id },
+            data: { passwordHash },
+          });
+          const token = signToken({ userId: user.id, username: user.username });
+          res.status(200).json({ token, user: { id: user.id, username: user.username } });
+          return;
+        }
+        res.status(409).json({ error: "Username already registered. Please switch to [ LOGIN ]." });
         return;
       }
 
@@ -106,7 +117,8 @@ export async function createApp() {
       res.status(201).json({ token, user: { id: user.id, username: user.username } });
     } catch (err) {
       logger.error({ err }, "registration failed");
-      res.status(500).json({ error: "Registration failed" });
+      const msg = err instanceof Error ? err.message : "Registration failed";
+      res.status(500).json({ error: `Registration failed: ${msg}` });
     }
   });
 
@@ -130,14 +142,19 @@ export async function createApp() {
         where: { username: cleanUsername },
       });
 
-      if (!user || !user.passwordHash) {
-        res.status(401).json({ error: "Invalid username or password" });
+      if (!user) {
+        res.status(401).json({ error: "Username not found. Switch to [ REGISTER ] to create it." });
+        return;
+      }
+
+      if (!user.passwordHash) {
+        res.status(401).json({ error: "Account has no password set. Switch to [ REGISTER ] to claim it." });
         return;
       }
 
       const isMatch = await verifyPassword(cleanPassword, user.passwordHash);
       if (!isMatch) {
-        res.status(401).json({ error: "Invalid username or password" });
+        res.status(401).json({ error: "Incorrect password. Please try again." });
         return;
       }
 
@@ -145,7 +162,8 @@ export async function createApp() {
       res.json({ token, user: { id: user.id, username: user.username } });
     } catch (err) {
       logger.error({ err }, "login failed");
-      res.status(500).json({ error: "Login failed" });
+      const msg = err instanceof Error ? err.message : "Login failed";
+      res.status(500).json({ error: `Login failed: ${msg}` });
     }
   });
 
