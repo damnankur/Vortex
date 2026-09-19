@@ -1,0 +1,222 @@
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: 16px;
+}
+
+.modalWindow {
+  background: var(--bg-secondary);
+  border: var(--border-thick);
+  box-shadow: var(--shadow-xl);
+  width: 100%;
+  max-width: 440px;
+  overflow: hidden;
+}
+
+.windowTitleBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-primary);
+  border-bottom: var(--border-thick);
+  padding: 10px 14px;
+}
+
+.windowTitle {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: 0.5px;
+}
+
+.windowPrompt {
+  color: var(--accent);
+  margin-right: 6px;
+}
+
+.windowControls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.windowBtn {
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid #000000;
+  background: var(--bg-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.windowBtnClose:hover {
+  background: var(--accent-pink);
+  color: #ffffff;
+}
+
+.modalBody {
+  padding: 24px;
+}
+
+.modalPrompt {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+  text-transform: uppercase;
+}
+
+.inputLabel {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  letter-spacing: 0.5px;
+}
+
+.textInput {
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--bg-primary);
+  border: var(--border-thick);
+  box-shadow: var(--shadow-sm);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 16px;
+  outline: none;
+}
+
+.textInput:focus {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 2px var(--accent-cyan), var(--shadow-sm);
+}
+
+.typeSelector {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.typeBtn {
+  padding: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: var(--border-mid);
+  cursor: pointer;
+  transition: all 0.1s ease;
+}
+
+.typeBtn:hover {
+  background: var(--hover-bg);
+}
+
+.typeBtnActive {
+  background: var(--accent-cyan);
+  color: #000000;
+  border-color: #000000;
+  box-shadow: var(--shadow-sm);
+}
+
+.channelModalBtns {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.cancelBtn {
+  flex: 1;
+  height: 48px;
+  border: var(--border-mid);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.1s ease;
+}
+
+.cancelBtn:hover {
+  background: var(--hover-bg);
+}
+
+.confirmBtn {
+  flex: 1.2;
+  height: 48px;
+  border: var(--border-thick);
+  background: var(--accent);
+  color: #000000;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.1s ease;
+}
+
+.confirmBtn:hover:not(:disabled) {
+  background: var(--accent-hover);
+  box-shadow: var(--shadow-md);
+  transform: translate(-1px, -1px);
+}
+
+.confirmBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+}
+
+.dangerBtn {
+  flex: 1.2;
+  height: 48px;
+  border: 2px solid #000000;
+  box-shadow: var(--shadow-sm);
+  background: var(--accent-pink);
+  color: #ffffff;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: all 0.1s ease;
+}
+
+.dangerBtn:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: var(--shadow-md);
+}
+
+.errorBanner {
+  background: rgba(255, 34, 34, 0.12);
+  border: 2px solid var(--accent-pink);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

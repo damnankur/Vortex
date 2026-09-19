@@ -1,0 +1,90 @@
+.members {
+  width: 220px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-tertiary);
+  border-left: var(--border-thick);
+  overflow-y: auto;
+}
+
+.membersHeader {
+  padding: 16px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: 0.5px;
+  border-bottom: var(--border-thick);
+  background: var(--bg-secondary);
+}
+
+.membersSection {
+  padding: 12px 16px 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+}
+
+.membersEmpty {
+  padding: 10px 16px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.member {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.memberSquare {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid #000000;
+  background: var(--success);
+  flex-shrink: 0;
+  box-shadow: 1px 1px 0px #000000;
+}
+
+.memberName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ownerBadge {
+  font-size: 9px;
+  font-weight: 900;
+  padding: 1px 5px;
+  background: #FFE600;
+  color: #000000;
+  border: 1px solid #000000;
+  margin-left: auto;
+  box-shadow: 1px 1px 0px #000000;
+}
+
+.botBadge {
+  font-size: 9px;
+  font-weight: 900;
+  padding: 1px 5px;
+  background: rgba(0, 240, 255, 0.15);
+  color: #00F0FF;
+  border: 1px solid #00F0FF;
+  margin-left: auto;
+  box-shadow: 1px 1px 0px #000000;
+}
+
+@media (max-width: 960px) {
+  .members {
+    display: none;
+  }
+}

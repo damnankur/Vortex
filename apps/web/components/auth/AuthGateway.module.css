@@ -1,0 +1,260 @@
+.usernameModal {
+  position: fixed;
+  inset: 0;
+  background: var(--bg-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+
+.windowFrame {
+  width: 100%;
+  max-width: 480px;
+  background: var(--bg-secondary);
+  border: var(--border-thick);
+  box-shadow: var(--shadow-xl);
+  overflow: hidden;
+}
+
+.windowTitleBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-primary);
+  border-bottom: var(--border-thick);
+  padding: 10px 14px;
+}
+
+.windowTitle {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: 0.5px;
+}
+
+.windowPrompt {
+  color: var(--accent);
+  margin-right: 6px;
+}
+
+.windowControls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.windowBtn {
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid #000000;
+  background: var(--bg-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+  color: var(--text-primary);
+}
+
+.windowBtnClose:hover {
+  background: var(--accent-pink);
+  color: #ffffff;
+}
+
+.usernameCard {
+  padding: 28px;
+}
+
+.usernameBrand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.logoContainer {
+  margin-bottom: 12px;
+}
+
+.usernameLogo {
+  display: block;
+}
+
+.usernameTitle {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.securityBadge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  background: var(--accent-cyan);
+  color: #000000;
+  padding: 2px 8px;
+  border: 1px solid #000000;
+  box-shadow: 1px 1px 0px #000000;
+}
+
+.authTabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.authTab {
+  padding: 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 800;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: var(--border-mid);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: all 0.1s ease;
+}
+
+.authTab:hover {
+  background: var(--hover-bg);
+}
+
+.authTabActive {
+  background: var(--accent);
+  color: #000000;
+  border-color: #000000;
+  box-shadow: var(--shadow-sm);
+}
+
+.inputLabel {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  margin-bottom: 6px;
+  letter-spacing: 0.5px;
+}
+
+.usernameInput {
+  width: 100%;
+  height: 48px;
+  padding: 0 16px;
+  border: var(--border-thick);
+  box-shadow: var(--shadow-sm);
+  background: var(--input-bg);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 700;
+  outline: none;
+  margin-bottom: 16px;
+  transition: all 0.1s ease;
+}
+
+.usernameInput:focus {
+  border-color: var(--accent-cyan);
+  box-shadow: var(--shadow-md);
+  transform: translate(-1px, -1px);
+}
+
+.passwordWrapper {
+  position: relative;
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.passwordWrapper .usernameInput {
+  margin-bottom: 0;
+  padding-right: 64px;
+}
+
+.passwordToggle {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--bg-tertiary);
+  border: 1.5px solid #000000;
+  box-shadow: 1px 1px 0px #000000;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.passwordToggle:hover {
+  background: var(--hover-bg);
+}
+
+.errorBanner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--accent-pink);
+  border: 2px solid #000000;
+  box-shadow: var(--shadow-sm);
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 800;
+  color: #000000;
+}
+
+.usernameBtn {
+  width: 100%;
+  height: 50px;
+  border: 3px solid #000000;
+  box-shadow: var(--shadow-md);
+  background: var(--accent);
+  color: #000000;
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 900;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: all 0.1s ease;
+}
+
+.usernameBtn:hover:not(:disabled) {
+  background: var(--accent-hover);
+  box-shadow: var(--shadow-lg);
+  transform: translate(-1px, -1px);
+}
+
+.usernameBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: var(--bg-tertiary);
+  box-shadow: none;
+  color: var(--text-muted);
+}
+
+.terminalFooter {
+  margin-top: 22px;
+  padding-top: 14px;
+  border-top: 2px solid var(--border-color);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-align: center;
+  letter-spacing: 0.3px;
+}

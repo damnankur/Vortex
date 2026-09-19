@@ -1,0 +1,105 @@
+.serverRail {
+  width: 72px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 14px 0;
+  gap: 10px;
+  background: var(--bg-primary);
+  border-right: var(--border-thick);
+  overflow-y: auto;
+  overflow-x: hidden;
+  user-select: none;
+  z-index: 10;
+}
+
+.serverIconWrapper {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.serverPill {
+  position: absolute;
+  left: 0;
+  width: 4px;
+  height: 0;
+  background: var(--accent-cyan);
+  box-shadow: 0 0 6px var(--accent-cyan);
+  transition: height 0.15s ease;
+  border-radius: 0 2px 2px 0;
+}
+
+.serverPillActive {
+  height: 36px;
+}
+
+.serverBtn {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: var(--border-mid);
+  box-shadow: var(--shadow-sm);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: all 0.1s ease;
+  position: relative;
+  text-transform: uppercase;
+}
+
+.serverBtn:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+}
+
+.serverBtnActive {
+  background: var(--accent) !important;
+  color: #000000 !important;
+  border: 2.5px solid #000000 !important;
+  box-shadow: 3px 3px 0px #000000 !important;
+}
+
+.serverDivider {
+  width: 38px;
+  height: 2.5px;
+  background: var(--border-color);
+  margin: 4px 0;
+  flex-shrink: 0;
+}
+
+.serverActionBtn {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary);
+  color: var(--accent-cyan);
+  border: var(--border-mid);
+  box-shadow: var(--shadow-sm);
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: all 0.1s ease;
+  flex-shrink: 0;
+}
+
+.serverActionBtn:hover {
+  background: var(--accent-cyan);
+  color: #000000;
+  transform: translate(-1px, -1px);
+  box-shadow: var(--shadow-md);
+  border-color: #000000;
+}
