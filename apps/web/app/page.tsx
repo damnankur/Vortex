@@ -32,9 +32,45 @@ function channelTitle(slug: string): string {
 
 function typingLabel(names: string[]): string {
   if (names.length === 0) return "";
-  if (names.length === 1) return `${names[0]} is transmitting...`;
-  if (names.length === 2) return `${names[0]} and ${names[1]} are transmitting...`;
-  return `${names[0]} and ${names.length - 1} others are transmitting...`;
+  const first = names[0] || "";
+  const second = names[1] || "";
+  if (names.length === 1) return `${first} is transmitting...`;
+  if (names.length === 2) return `${first} and ${second} are transmitting...`;
+  return `${first} and ${names.length - 1} others are transmitting...`;
+}
+
+function serverInitials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  const p0 = parts[0] || "";
+  const p1 = parts[1] || "";
+  if (parts.length >= 2 && p0 && p1) {
+    return (p0.charAt(0) + p1.charAt(0)).toUpperCase();
+  }
+  return name.slice(0, 2).toUpperCase();
+}
+
+function renderFormattedMessage(text: string, currentUsername?: string) {
+  const mentionRegex = /(@[a-zA-Z0-9_-]+)/g;
+  const parts = text.split(mentionRegex);
+
+  return parts.map((part, idx) => {
+    if (part.startsWith("@") && part.length > 1) {
+      const handle = part.slice(1);
+      const isSelf = Boolean(
+        currentUsername && handle.toLowerCase() === currentUsername.toLowerCase()
+      );
+      return (
+        <span
+          key={idx}
+          className={classes.mentionPill}
+          title={isSelf ? "Mentioned you" : `@${handle}`}
+        >
+          {part}
+        </span>
+      );
+    }
+    return <span key={idx}>{part}</span>;
+  });
 }
 
 export default function Page() {
@@ -42,6 +78,11 @@ export default function Page() {
     login,
     register,
     reset,
+    servers,
+    activeServer,
+    switchServer,
+    createServer,
+    joinServerByCode,
     createChannel,
     joinChannelWithCode,
     sendMessage,
@@ -57,6 +98,8 @@ export default function Page() {
     currentUser,
     error,
     loadingAuth,
+    notificationPermission,
+    requestNotificationPermission,
   } = useSocket();
 
   // Chat message & theme state
@@ -72,6 +115,22 @@ export default function Page() {
   const [showPassword, setShowPassword] = useState(false);
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+
+  // Server creation modal state
+  const [showServerModal, setShowServerModal] = useState(false);
+  const [serverName, setServerName] = useState("");
+  const [serverDesc, setServerDesc] = useState("");
+  const [serverSubmitting, setServerSubmitting] = useState(false);
+  const [serverModalError, setServerModalError] = useState<string | null>(null);
+
+  // Join server modal state
+  const [showJoinServerModal, setShowJoinServerModal] = useState(false);
+  const [joinServerInviteCode, setJoinServerInviteCode] = useState("");
+  const [joinServerSubmitting, setJoinServerSubmitting] = useState(false);
+  const [joinServerModalError, setJoinServerModalError] = useState<string | null>(null);
+
+  // Invite code copied feedback state
+  const [copiedCode, setCopiedCode] = useState(false);
 
   // Channel creation modal state
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -131,6 +190,45 @@ export default function Page() {
       setAuthError(err instanceof Error ? err.message : "Authentication failed");
     } finally {
       setAuthSubmitting(false);
+    }
+  };
+
+  // Handle Server Creation
+  const handleCreateServerSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!serverName.trim() || serverSubmitting) return;
+
+    setServerSubmitting(true);
+    setServerModalError(null);
+
+    try {
+      await createServer(serverName.trim(), serverDesc.trim() || undefined);
+      setShowServerModal(false);
+      setServerName("");
+      setServerDesc("");
+    } catch (err) {
+      setServerModalError(err instanceof Error ? err.message : "Failed to create server");
+    } finally {
+      setServerSubmitting(false);
+    }
+  };
+
+  // Handle Join Server
+  const handleJoinServerSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!joinServerInviteCode.trim() || joinServerSubmitting) return;
+
+    setJoinServerSubmitting(true);
+    setJoinServerModalError(null);
+
+    try {
+      await joinServerByCode(joinServerInviteCode.trim());
+      setShowJoinServerModal(false);
+      setJoinServerInviteCode("");
+    } catch (err) {
+      setJoinServerModalError(err instanceof Error ? err.message : "Failed to join server");
+    } finally {
+      setJoinServerSubmitting(false);
     }
   };
 
@@ -369,7 +467,60 @@ export default function Page() {
 
   return (
     <div className={classes.app} data-theme={theme}>
-      {/* ---------- Sidebar ---------- */}
+      {/* ---------- Discord-style Left Server Rail ---------- */}
+      <nav className={classes.serverRail} aria-label="Servers">
+        {servers.map((srv) => {
+          const isActive = activeServer?.slug === srv.slug;
+          return (
+            <div key={srv.id} className={classes.serverIconWrapper}>
+              <div
+                className={`${classes.serverPill} ${isActive ? classes.serverPillActive : ""}`}
+              />
+              <button
+                type="button"
+                className={`${classes.serverBtn} ${isActive ? classes.serverBtnActive : ""}`}
+                onClick={() => switchServer(srv.slug)}
+                title={`${srv.name} [CODE: ${srv.inviteCode}]`}
+                aria-label={`Server: ${srv.name}`}
+              >
+                {serverInitials(srv.name)}
+              </button>
+            </div>
+          );
+        })}
+
+        <div className={classes.serverDivider} />
+
+        {/* Action: Create Server */}
+        <button
+          type="button"
+          className={classes.serverActionBtn}
+          onClick={() => {
+            setShowServerModal(true);
+            setServerModalError(null);
+          }}
+          title="Create New Server"
+          aria-label="Create New Server"
+        >
+          +
+        </button>
+
+        {/* Action: Join Server with Code */}
+        <button
+          type="button"
+          className={classes.serverActionBtn}
+          onClick={() => {
+            setShowJoinServerModal(true);
+            setJoinServerModalError(null);
+          }}
+          title="Join Server with Invite Code"
+          aria-label="Join Server with Invite Code"
+        >
+          🧭
+        </button>
+      </nav>
+
+      {/* ---------- Channels Sidebar ---------- */}
       <aside className={classes.sidebar} aria-label="Channels">
         <div className={classes.brand}>
           <div className={classes.brandLeft}>
@@ -385,6 +536,30 @@ export default function Page() {
           <div className={classes.brandBadge}>v1.0</div>
         </div>
 
+        {/* Active Server Info & Invite Badge */}
+        {activeServer && (
+          <div className={classes.serverMetaBar}>
+            <div className={classes.serverMetaName} title={activeServer.name}>
+              {activeServer.name}
+            </div>
+            <button
+              type="button"
+              className={classes.serverInviteBtn}
+              onClick={() => {
+                if (typeof navigator !== "undefined" && navigator.clipboard) {
+                  navigator.clipboard.writeText(activeServer.inviteCode);
+                  setCopiedCode(true);
+                  setTimeout(() => setCopiedCode(false), 2000);
+                }
+              }}
+              title="Click to copy server invite code"
+            >
+              <span>INVITE: {activeServer.inviteCode}</span>
+              <span>{copiedCode ? "✓ COPIED" : "📋"}</span>
+            </button>
+          </div>
+        )}
+
         <div className={classes.channelGroup}>
           <div className={classes.channelGroupHeader}>
             <div className={classes.channelGroupLabel}>[ TEXT CHANNELS ]</div>
@@ -395,7 +570,7 @@ export default function Page() {
                 setShowCreateModal(true);
                 setCreateError(null);
               }}
-              title="Create new channel"
+              title="Create new channel in active server"
               aria-label="Create new channel"
             >
               [+]
@@ -462,6 +637,20 @@ export default function Page() {
           </div>
           <div className={classes.chatHeaderControls}>
             <button
+              type="button"
+              className={`${classes.notifyToggleBtn} ${
+                notificationPermission === "granted" ? classes.notifyActive : ""
+              }`}
+              onClick={requestNotificationPermission}
+              title={
+                notificationPermission === "granted"
+                  ? "Desktop background notifications are active"
+                  : "Click to enable background desktop notifications"
+              }
+            >
+              🔔 {notificationPermission === "granted" ? "NOTIFS: ON" : "ENABLE NOTIFS"}
+            </button>
+            <button
               className={classes.themeToggleBtn}
               onClick={toggleTheme}
               aria-label="Toggle theme"
@@ -491,6 +680,11 @@ export default function Page() {
             messages.map((msg) => {
               const isOwn = msg.userId === currentUser?.id;
               const name = msg.username || "anon";
+              const myUsername = currentUser?.username?.toLowerCase();
+              const isMentioned = Boolean(
+                myUsername && msg.text.toLowerCase().includes(`@${myUsername}`)
+              );
+
               return (
                 <div
                   key={msg.messageId}
@@ -503,13 +697,24 @@ export default function Page() {
                   >
                     {name.charAt(0).toUpperCase()}
                   </div>
-                  <div className={`${classes.messageCard} ${isOwn ? classes.messageCardOwn : ""}`}>
+                  <div
+                    className={`${classes.messageCard} ${isOwn ? classes.messageCardOwn : ""} ${
+                      isMentioned ? classes.messageCardMentioned : ""
+                    }`}
+                  >
                     <div className={classes.messageHeader}>
                       <span className={classes.messageUser}>{name}</span>
                       {isOwn && <span className={classes.messageTag}>YOU</span>}
+                      {isMentioned && (
+                        <span className={classes.mentionBadge} title="You were mentioned in this transmission">
+                          @MENTIONED
+                        </span>
+                      )}
                       <span className={classes.messageTime}>[{formatTime(msg.createdAt)}]</span>
                     </div>
-                    <div className={classes.messageText}>{msg.text}</div>
+                    <div className={classes.messageText}>
+                      {renderFormattedMessage(msg.text, currentUser?.username)}
+                    </div>
                   </div>
                 </div>
               );
@@ -739,6 +944,158 @@ export default function Page() {
                     disabled={!unlockPasskey.trim() || unlockSubmitting}
                   >
                     {unlockSubmitting ? "[ VERIFYING... ]" : "[ UNLOCK & ENTER → ]"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---------- Modal: Create Server ---------- */}
+      {showServerModal && (
+        <div className={classes.modalOverlay} role="dialog" aria-modal="true">
+          <div className={classes.modalWindow}>
+            <div className={classes.windowTitleBar}>
+              <div className={classes.windowTitle}>
+                <span className={classes.windowPrompt}>&gt;_</span> SYS://SERVER_CREATOR
+              </div>
+              <div className={classes.windowControls}>
+                <button
+                  type="button"
+                  className={`${classes.windowBtn} ${classes.windowBtnClose}`}
+                  onClick={() => setShowServerModal(false)}
+                  aria-label="Close modal"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div className={classes.modalBody}>
+              <div className={classes.modalPrompt}>
+                INITIALIZE A NEW DISCORD-STYLE SERVER REALM.
+                <br />
+                CREATE CHANNELS &amp; INVITE YOUR FRIENDS VIA YOUR PRIVATE INVITE CODE.
+              </div>
+
+              <form onSubmit={handleCreateServerSubmit}>
+                <label className={classes.inputLabel} htmlFor="new-server-name">
+                  SERVER_NAME // [1-50 CHARS, REQUIRED]
+                </label>
+                <input
+                  id="new-server-name"
+                  className={classes.usernameInput}
+                  placeholder="e.g. Cyber Bunker, SquadHQ"
+                  value={serverName}
+                  onChange={(e) => setServerName(e.target.value)}
+                  maxLength={50}
+                  required
+                  autoFocus
+                />
+
+                <label className={classes.inputLabel} htmlFor="new-server-desc">
+                  DESCRIPTION // [OPTIONAL]
+                </label>
+                <input
+                  id="new-server-desc"
+                  className={classes.usernameInput}
+                  placeholder="e.g. Private hangout for gaming and banter"
+                  value={serverDesc}
+                  onChange={(e) => setServerDesc(e.target.value)}
+                  maxLength={255}
+                />
+
+                {serverModalError && (
+                  <div className={classes.errorBanner} role="alert">
+                    <span>[!]</span> {serverModalError}
+                  </div>
+                )}
+
+                <div className={classes.channelModalBtns}>
+                  <button
+                    type="button"
+                    className={classes.cancelBtn}
+                    onClick={() => setShowServerModal(false)}
+                  >
+                    [ CANCEL ]
+                  </button>
+                  <button
+                    type="submit"
+                    className={classes.confirmBtn}
+                    disabled={!serverName.trim() || serverSubmitting}
+                  >
+                    {serverSubmitting ? "[ INITIALIZING... ]" : "[ CREATE SERVER ↵ ]"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---------- Modal: Join Server with Invite Code ---------- */}
+      {showJoinServerModal && (
+        <div className={classes.modalOverlay} role="dialog" aria-modal="true">
+          <div className={classes.modalWindow}>
+            <div className={classes.windowTitleBar}>
+              <div className={classes.windowTitle}>
+                <span className={classes.windowPrompt}>&gt;_</span> SYS://JOIN_SERVER
+              </div>
+              <div className={classes.windowControls}>
+                <button
+                  type="button"
+                  className={`${classes.windowBtn} ${classes.windowBtnClose}`}
+                  onClick={() => setShowJoinServerModal(false)}
+                  aria-label="Close modal"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div className={classes.modalBody}>
+              <div className={classes.modalPrompt}>
+                JOIN AN EXISTING SERVER HUB.
+                <br />
+                ENTER THE UNIQUE INVITE CODE SUPPLIED BY A SERVER OPERATOR.
+              </div>
+
+              <form onSubmit={handleJoinServerSubmit}>
+                <label className={classes.inputLabel} htmlFor="join-server-code">
+                  SERVER_INVITE_CODE // [E.G. VX-XXXX OR VORTEX-MAIN]
+                </label>
+                <input
+                  id="join-server-code"
+                  className={classes.usernameInput}
+                  placeholder="e.g. VX-9K2L"
+                  value={joinServerInviteCode}
+                  onChange={(e) => setJoinServerInviteCode(e.target.value.toUpperCase())}
+                  maxLength={30}
+                  required
+                  autoFocus
+                />
+
+                {joinServerModalError && (
+                  <div className={classes.errorBanner} role="alert">
+                    <span>[!]</span> {joinServerModalError}
+                  </div>
+                )}
+
+                <div className={classes.channelModalBtns}>
+                  <button
+                    type="button"
+                    className={classes.cancelBtn}
+                    onClick={() => setShowJoinServerModal(false)}
+                  >
+                    [ CANCEL ]
+                  </button>
+                  <button
+                    type="submit"
+                    className={classes.confirmBtn}
+                    disabled={!joinServerInviteCode.trim() || joinServerSubmitting}
+                  >
+                    {joinServerSubmitting ? "[ CONNECTING... ]" : "[ JOIN REALM ↵ ]"}
                   </button>
                 </div>
               </form>

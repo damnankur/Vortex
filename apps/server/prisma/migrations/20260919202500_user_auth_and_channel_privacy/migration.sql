@@ -15,3 +15,4 @@ DO $$ BEGIN
     FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
   END IF;
 END $$;
+

@@ -13,16 +13,49 @@ enum RoomType {
 }
 
 model User {
-  id           String           @id @default(uuid())
-  username     String           @unique @db.VarChar(50)
-  passwordHash String?          @map("password_hash")
-  createdAt    DateTime         @default(now()) @map("created_at")
-  updatedAt    DateTime         @updatedAt @map("updated_at")
-  memberships  RoomMembership[]
-  messages     Message[]
-  createdRooms Room[]           @relation("CreatedRooms")
+  id                String             @id @default(uuid())
+  username          String             @unique @db.VarChar(50)
+  passwordHash      String?            @map("password_hash")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+  memberships       RoomMembership[]
+  messages          Message[]
+  createdRooms      Room[]             @relation("CreatedRooms")
+  ownedServers      Server[]           @relation("OwnedServers")
+  serverMemberships ServerMembership[]
 
   @@map("users")
+}
+
+model Server {
+  id          String             @id @default(uuid())
+  name        String             @db.VarChar(100)
+  slug        String             @unique @db.VarChar(50)
+  description String?            @db.VarChar(255)
+  iconUrl     String?            @map("icon_url")
+  inviteCode  String             @unique @map("invite_code") @db.VarChar(20)
+  ownerId     String             @map("owner_id")
+  owner       User               @relation("OwnedServers", fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt   DateTime           @default(now()) @map("created_at")
+  updatedAt   DateTime           @updatedAt @map("updated_at")
+  memberships ServerMembership[]
+  rooms       Room[]
+
+  @@map("servers")
+}
+
+model ServerMembership {
+  id       String   @id @default(uuid())
+  serverId String   @map("server_id")
+  userId   String   @map("user_id")
+  role     String   @default("MEMBER") @db.VarChar(20)
+  joinedAt DateTime @default(now()) @map("joined_at")
+  server   Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([serverId, userId])
+  @@index([userId])
+  @@map("server_memberships")
 }
 
 model Room {
@@ -32,6 +65,8 @@ model Room {
   type        RoomType         @default(CHANNEL)
   isPrivate   Boolean          @default(false) @map("is_private")
   inviteCode  String?          @map("invite_code") @db.VarChar(50)
+  serverId    String?          @map("server_id")
+  server      Server?          @relation(fields: [serverId], references: [id], onDelete: Cascade)
   createdById String?          @map("created_by_id")
   createdBy   User?            @relation("CreatedRooms", fields: [createdById], references: [id], onDelete: SetNull)
   createdAt   DateTime         @default(now()) @map("created_at")
@@ -39,6 +74,7 @@ model Room {
   memberships RoomMembership[]
   messages    Message[]
 
+  @@index([serverId])
   @@index([type])
   @@map("rooms")
 }

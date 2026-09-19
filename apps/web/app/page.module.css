@@ -1123,18 +1123,247 @@
   letter-spacing: 0.5px;
 }
 
+/* ---------- Server Rail (Discord-style Brutalist) ---------- */
+.serverRail {
+  width: 72px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 14px 0;
+  gap: 10px;
+  background: var(--bg-primary);
+  border-right: var(--border-thick);
+  overflow-y: auto;
+  overflow-x: hidden;
+  user-select: none;
+  z-index: 10;
+}
+
+.serverIconWrapper {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.serverPill {
+  position: absolute;
+  left: 0;
+  width: 4px;
+  height: 0;
+  background: var(--accent);
+  transition: height 0.15s ease;
+  border-radius: 0 2px 2px 0;
+}
+
+.serverPillActive {
+  height: 36px;
+}
+
+.serverBtn {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: var(--border-mid);
+  box-shadow: var(--shadow-sm);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: all 0.1s ease;
+  position: relative;
+  text-transform: uppercase;
+}
+
+.serverBtn:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--accent);
+}
+
+.serverBtnActive {
+  background: var(--accent) !important;
+  color: #000000 !important;
+  border: 2.5px solid #000000 !important;
+  box-shadow: 2px 2px 0px #000000 !important;
+}
+
+.serverDivider {
+  width: 38px;
+  height: 2.5px;
+  background: var(--border);
+  margin: 4px 0;
+  flex-shrink: 0;
+}
+
+.serverActionBtn {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: var(--border-mid);
+  box-shadow: var(--shadow-sm);
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: all 0.1s ease;
+  flex-shrink: 0;
+}
+
+.serverActionBtn:hover {
+  background: #00E5FF;
+  color: #000000;
+  transform: translate(-1px, -1px);
+  box-shadow: var(--shadow-md);
+  border-color: #000000;
+}
+
+/* ---------- Active Server Sub-Header in Channels Sidebar ---------- */
+.serverMetaBar {
+  padding: 10px 14px;
+  background: var(--bg-tertiary);
+  border-bottom: var(--border-mid);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.serverMetaName {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.serverInviteBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  padding: 4px 8px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1.5px solid var(--border);
+  cursor: pointer;
+  transition: all 0.1s ease;
+}
+
+.serverInviteBtn:hover {
+  background: var(--accent);
+  color: #000000;
+  border-color: #000000;
+}
+
+/* ---------- User Mentions & Highlight Badges ---------- */
+.mentionPill {
+  display: inline-block;
+  background: #FFE600;
+  color: #000000;
+  font-family: var(--font-mono);
+  font-weight: 800;
+  font-size: 0.9em;
+  padding: 1px 5px;
+  border: 1.5px solid #000000;
+  box-shadow: 1px 1px 0px #000000;
+  margin: 0 2px;
+  vertical-align: baseline;
+  text-decoration: none;
+}
+
+.messageCardMentioned {
+  border: 2.5px solid #FFE600 !important;
+  box-shadow: 3px 3px 0px #FFE600 !important;
+  background: rgba(255, 230, 0, 0.06) !important;
+}
+
+.mentionBadge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 900;
+  background: #FFE600;
+  color: #000000;
+  padding: 1px 5px;
+  border: 1.5px solid #000000;
+  box-shadow: 1px 1px 0px #000000;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+/* ---------- Notification Controls ---------- */
+.notifyToggleBtn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  border: var(--border-mid);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  padding: 5px 9px;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.1s ease;
+}
+
+.notifyToggleBtn:hover {
+  background: var(--accent);
+  color: #000000;
+  transform: translate(-1px, -1px);
+  box-shadow: var(--shadow-md);
+  border-color: #000000;
+}
+
+.notifyActive {
+  background: var(--accent);
+  color: #000000;
+  border-color: #000000;
+}
+
 @media (max-width: 960px) {
   .members {
     display: none;
   }
   .sidebar {
-    width: 210px;
+    width: 200px;
   }
 }
 
 @media (max-width: 640px) {
+  .serverRail {
+    width: 56px;
+    padding: 8px 0;
+    gap: 8px;
+  }
+  .serverBtn,
+  .serverActionBtn {
+    width: 40px;
+    height: 40px;
+    font-size: 12px;
+  }
   .sidebar {
-    width: 72px;
+    width: 64px;
+  }
+  .serverMetaBar {
+    display: none;
   }
   .brandBadge,
   .channelGroupLabel,

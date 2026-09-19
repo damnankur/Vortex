@@ -18,24 +18,105 @@ async function main() {
       ALTER TABLE "rooms" ADD COLUMN IF NOT EXISTS "is_private" BOOLEAN NOT NULL DEFAULT false;
       ALTER TABLE "rooms" ADD COLUMN IF NOT EXISTS "invite_code" VARCHAR(50);
       ALTER TABLE "rooms" ADD COLUMN IF NOT EXISTS "created_by_id" TEXT;
+      ALTER TABLE "rooms" ADD COLUMN IF NOT EXISTS "server_id" TEXT;
+
+      CREATE TABLE IF NOT EXISTS "servers" (
+        "id" TEXT NOT NULL,
+        "name" VARCHAR(100) NOT NULL,
+        "slug" VARCHAR(50) NOT NULL,
+        "description" VARCHAR(255),
+        "icon_url" TEXT,
+        "invite_code" VARCHAR(20) NOT NULL,
+        "owner_id" TEXT NOT NULL,
+        "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "servers_pkey" PRIMARY KEY ("id")
+      );
+
+      CREATE TABLE IF NOT EXISTS "server_memberships" (
+        "id" TEXT NOT NULL,
+        "server_id" TEXT NOT NULL,
+        "user_id" TEXT NOT NULL,
+        "role" VARCHAR(20) NOT NULL DEFAULT 'MEMBER',
+        "joined_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "server_memberships_pkey" PRIMARY KEY ("id")
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS "servers_slug_key" ON "servers"("slug");
+      CREATE UNIQUE INDEX IF NOT EXISTS "servers_invite_code_key" ON "servers"("invite_code");
+      CREATE UNIQUE INDEX IF NOT EXISTS "server_memberships_server_id_user_id_key" ON "server_memberships"("server_id", "user_id");
+
       DO $$ BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'rooms_created_by_id_fkey') THEN
           ALTER TABLE "rooms" ADD CONSTRAINT "rooms_created_by_id_fkey" 
           FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'servers_owner_id_fkey') THEN
+          ALTER TABLE "servers" ADD CONSTRAINT "servers_owner_id_fkey" 
+          FOREIGN KEY ("owner_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'server_memberships_server_id_fkey') THEN
+          ALTER TABLE "server_memberships" ADD CONSTRAINT "server_memberships_server_id_fkey" 
+          FOREIGN KEY ("server_id") REFERENCES "servers"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'server_memberships_user_id_fkey') THEN
+          ALTER TABLE "server_memberships" ADD CONSTRAINT "server_memberships_user_id_fkey" 
+          FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'rooms_server_id_fkey') THEN
+          ALTER TABLE "rooms" ADD CONSTRAINT "rooms_server_id_fkey" 
+          FOREIGN KEY ("server_id") REFERENCES "servers"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
       END $$;
     `);
-    logger.info("Database schema auto-sync verified");
+    logger.info("Database multi-server schema auto-sync verified");
   } catch (schemaErr) {
     logger.warn({ schemaErr }, "Schema auto-sync warning (continuing)");
   }
 
-  for (const slug of channelSlugs) {
-    await prisma.room.upsert({
-      where: { slug },
-      create: { slug, name: channelName(slug) },
+  // Seed default server and link default channels
+  try {
+    const defaultOwner = await prisma.user.upsert({
+      where: { username: "vortex_system" },
+      create: { username: "vortex_system" },
       update: {},
     });
+
+    const defaultServer = await prisma.server.upsert({
+      where: { slug: "vortex-main" },
+      create: {
+        name: "Vortex Main",
+        slug: "vortex-main",
+        description: "Primary Server for Vortex Chat",
+        inviteCode: "VORTEX-MAIN",
+        ownerId: defaultOwner.id,
+      },
+      update: {
+        name: "Vortex Main",
+      },
+    });
+
+    for (const slug of channelSlugs) {
+      await prisma.room.upsert({
+        where: { slug },
+        create: {
+          slug,
+          name: channelName(slug),
+          serverId: defaultServer.id,
+        },
+        update: {
+          serverId: defaultServer.id,
+        },
+      });
+    }
+
+    // Attach any legacy unassigned channels to defaultServer
+    await prisma.room.updateMany({
+      where: { serverId: null },
+      data: { serverId: defaultServer.id },
+    });
+  } catch (seedErr) {
+    logger.warn({ seedErr }, "Default server seed warning");
   }
 
   const consumer = await startMessageConsumer();

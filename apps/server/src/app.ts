@@ -196,12 +196,225 @@ export async function createApp() {
     }
   });
 
+  // ---------- Servers Endpoints ----------
+  app.get("/servers", authRequired, async (req, res) => {
+    const user = (req as Request & { user: AuthUser }).user;
+    try {
+      // Ensure default server exists and user is a member
+      const mainServer = await prisma.server.findUnique({
+        where: { slug: "vortex-main" },
+      });
+
+      if (mainServer) {
+        await prisma.serverMembership.upsert({
+          where: {
+            serverId_userId: { serverId: mainServer.id, userId: user.userId },
+          },
+          create: { serverId: mainServer.id, userId: user.userId, role: "MEMBER" },
+          update: {},
+        });
+      }
+
+      // Fetch all servers user belongs to or owns
+      const memberships = await prisma.serverMembership.findMany({
+        where: { userId: user.userId },
+        select: { serverId: true, role: true },
+      });
+      const serverIds = memberships.map((m) => m.serverId);
+
+      const servers = await prisma.server.findMany({
+        where: { id: { in: serverIds } },
+        include: {
+          _count: { select: { rooms: true, memberships: true } },
+        },
+        orderBy: { createdAt: "asc" },
+      });
+
+      const roleMap = new Map(memberships.map((m) => [m.serverId, m.role]));
+
+      const result = servers.map((s) => ({
+        id: s.id,
+        name: s.name,
+        slug: s.slug,
+        description: s.description,
+        iconUrl: s.iconUrl,
+        inviteCode: s.inviteCode,
+        isOwner: s.ownerId === user.userId,
+        role: roleMap.get(s.id) || (s.ownerId === user.userId ? "OWNER" : "MEMBER"),
+        memberCount: s._count.memberships,
+        channelCount: s._count.rooms,
+      }));
+
+      res.json({ servers: result });
+    } catch (err) {
+      logger.error({ err }, "fetch servers failed");
+      res.status(500).json({ error: "Failed to load servers" });
+    }
+  });
+
+  // Create Server
+  app.post("/servers", authRequired, async (req, res) => {
+    const user = (req as Request & { user: AuthUser }).user;
+    const { name, description } = req.body as {
+      name?: unknown;
+      description?: unknown;
+    };
+
+    const cleanName = typeof name === "string" ? name.trim() : "";
+    if (!cleanName || cleanName.length > 50) {
+      res.status(400).json({ error: "Server name must be 1-50 characters" });
+      return;
+    }
+
+    const cleanDesc = typeof description === "string" ? description.trim() : "";
+
+    const rawSlug = cleanName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    const randomSuffix = Math.random().toString(36).substring(2, 6);
+    const serverSlug = `${rawSlug || "server"}-${randomSuffix}`;
+    const inviteCode = `VX-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+
+    try {
+      const server = await prisma.server.create({
+        data: {
+          name: cleanName,
+          slug: serverSlug,
+          description: cleanDesc || null,
+          inviteCode,
+          ownerId: user.userId,
+          memberships: {
+            create: {
+              userId: user.userId,
+              role: "OWNER",
+            },
+          },
+          rooms: {
+            create: {
+              name: "general",
+              slug: `${serverSlug}-general`,
+              type: "CHANNEL",
+              createdById: user.userId,
+            },
+          },
+        },
+        include: {
+          rooms: true,
+          _count: { select: { rooms: true, memberships: true } },
+        },
+      });
+
+      res.status(201).json({
+        server: {
+          id: server.id,
+          name: server.name,
+          slug: server.slug,
+          description: server.description,
+          iconUrl: server.iconUrl,
+          inviteCode: server.inviteCode,
+          isOwner: true,
+          role: "OWNER",
+          memberCount: server._count.memberships,
+          channelCount: server._count.rooms,
+          defaultChannelSlug: server.rooms[0]?.slug,
+        },
+      });
+    } catch (err) {
+      logger.error({ err }, "create server failed");
+      res.status(500).json({ error: "Failed to create server" });
+    }
+  });
+
+  // Join Server via Invite Code
+  app.post("/servers/join", authRequired, async (req, res) => {
+    const user = (req as Request & { user: AuthUser }).user;
+    const { inviteCode } = req.body as { inviteCode?: unknown };
+
+    const cleanCode = typeof inviteCode === "string" ? inviteCode.trim().toUpperCase() : "";
+    if (!cleanCode) {
+      res.status(400).json({ error: "Invite code is required" });
+      return;
+    }
+
+    try {
+      const server = await prisma.server.findUnique({
+        where: { inviteCode: cleanCode },
+        include: {
+          rooms: { orderBy: { createdAt: "asc" }, take: 1 },
+          _count: { select: { rooms: true, memberships: true } },
+        },
+      });
+
+      if (!server) {
+        res.status(404).json({ error: "No server found matching that invite code" });
+        return;
+      }
+
+      await prisma.serverMembership.upsert({
+        where: {
+          serverId_userId: { serverId: server.id, userId: user.userId },
+        },
+        create: {
+          serverId: server.id,
+          userId: user.userId,
+          role: "MEMBER",
+        },
+        update: {},
+      });
+
+      res.json({
+        success: true,
+        server: {
+          id: server.id,
+          name: server.name,
+          slug: server.slug,
+          description: server.description,
+          iconUrl: server.iconUrl,
+          inviteCode: server.inviteCode,
+          isOwner: server.ownerId === user.userId,
+          role: server.ownerId === user.userId ? "OWNER" : "MEMBER",
+          memberCount: server._count.memberships + 1,
+          channelCount: server._count.rooms,
+          defaultChannelSlug: server.rooms[0]?.slug || "general",
+        },
+      });
+    } catch (err) {
+      logger.error({ err }, "join server failed");
+      res.status(500).json({ error: "Failed to join server" });
+    }
+  });
+
   // ---------- Channels List ----------
   app.get("/channels", authRequired, async (req, res) => {
     const user = (req as Request & { user: AuthUser }).user;
+    const serverSlug = typeof req.query.serverSlug === "string" ? req.query.serverSlug : undefined;
+
     try {
+      let serverIdFilter: string | undefined;
+
+      if (serverSlug) {
+        const server = await prisma.server.findUnique({
+          where: { slug: serverSlug },
+        });
+        if (server) {
+          serverIdFilter = server.id;
+        }
+      } else {
+        // Default to vortex-main server
+        const mainServer = await prisma.server.findUnique({
+          where: { slug: "vortex-main" },
+        });
+        if (mainServer) {
+          serverIdFilter = mainServer.id;
+        }
+      }
+
       const rooms = await prisma.room.findMany({
-        where: { type: "CHANNEL" },
+        where: {
+          type: "CHANNEL",
+          ...(serverIdFilter ? { serverId: serverIdFilter } : {}),
+        },
         orderBy: { createdAt: "asc" },
         include: {
           memberships: {
@@ -229,11 +442,12 @@ export async function createApp() {
   // ---------- Create Dynamic Channel ----------
   app.post("/channels", authRequired, async (req, res) => {
     const user = (req as Request & { user: AuthUser }).user;
-    const { name, slug: customSlug, isPrivate, inviteCode } = req.body as {
+    const { name, slug: customSlug, isPrivate, inviteCode, serverSlug } = req.body as {
       name?: unknown;
       slug?: unknown;
       isPrivate?: unknown;
       inviteCode?: unknown;
+      serverSlug?: unknown;
     };
 
     const cleanName = typeof name === "string" ? name.trim() : "";
@@ -259,6 +473,23 @@ export async function createApp() {
     const cleanInviteCode = typeof inviteCode === "string" ? inviteCode.trim() : null;
 
     try {
+      // Find server to attach to
+      let targetServerId: string | null = null;
+      let targetServerSlug = typeof serverSlug === "string" ? serverSlug.trim() : "";
+
+      if (targetServerSlug) {
+        const s = await prisma.server.findUnique({ where: { slug: targetServerSlug } });
+        if (s) targetServerId = s.id;
+      }
+
+      if (!targetServerId) {
+        const main = await prisma.server.findUnique({ where: { slug: "vortex-main" } });
+        if (main) {
+          targetServerId = main.id;
+          targetServerSlug = main.slug;
+        }
+      }
+
       const existing = await prisma.room.findUnique({
         where: { slug },
       });
@@ -276,6 +507,7 @@ export async function createApp() {
           isPrivate: cleanIsPrivate,
           inviteCode: cleanIsPrivate ? cleanInviteCode : null,
           createdById: user.userId,
+          serverId: targetServerId,
           memberships: {
             create: {
               userId: user.userId,
@@ -290,6 +522,7 @@ export async function createApp() {
         name: room.name,
         type: room.type,
         isPrivate: room.isPrivate,
+        serverSlug: targetServerSlug,
       });
 
       res.status(201).json({
@@ -299,6 +532,7 @@ export async function createApp() {
           type: room.type,
           isPrivate: room.isPrivate,
           isMember: true,
+          serverSlug: targetServerSlug,
         },
       });
     } catch (err) {

@@ -21,6 +21,21 @@ export interface Channel {
   name: string;
   isPrivate?: boolean;
   isMember?: boolean;
+  serverSlug?: string;
+}
+
+export interface Server {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string | null;
+  iconUrl?: string | null;
+  inviteCode: string;
+  isOwner?: boolean;
+  role?: string;
+  memberCount?: number;
+  channelCount?: number;
+  defaultChannelSlug?: string;
 }
 
 export interface PresenceUser {
@@ -34,11 +49,19 @@ interface ISocketContext {
   register: (username: string, password: string, serverInviteCode?: string) => Promise<void>;
   join: (username: string) => Promise<void>;
   reset: () => void;
+  // Server actions
+  servers: Server[];
+  activeServer: Server | null;
+  switchServer: (serverSlug: string) => Promise<void>;
+  createServer: (name: string, description?: string) => Promise<Server>;
+  joinServerByCode: (inviteCode: string) => Promise<Server>;
+  // Channel actions
   createChannel: (
     name: string,
     slug?: string,
     isPrivate?: boolean,
-    inviteCode?: string
+    inviteCode?: string,
+    serverSlug?: string
   ) => Promise<Channel>;
   joinChannelWithCode: (slug: string, inviteCode: string) => Promise<void>;
   sendMessage: (text: string) => void;
@@ -54,6 +77,9 @@ interface ISocketContext {
   currentUser: CurrentUser | null;
   error: string | null;
   loadingAuth: boolean;
+  // Notifications
+  notificationPermission: NotificationPermission;
+  requestNotificationPermission: () => Promise<void>;
 }
 
 const SocketContext = React.createContext<ISocketContext | null>(null);
@@ -68,26 +94,117 @@ function genMessageId(): string {
   return crypto.randomUUID();
 }
 
+function playNeoChime(isMention = false) {
+  try {
+    const AudioCtx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = isMention ? "triangle" : "sine";
+    const now = ctx.currentTime;
+    if (isMention) {
+      osc.frequency.setValueAtTime(587.33, now); // D5
+      osc.frequency.setValueAtTime(880, now + 0.1); // A5
+      gain.gain.setValueAtTime(0.2, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.35);
+    } else {
+      osc.frequency.setValueAtTime(659.25, now); // E5
+      gain.gain.setValueAtTime(0.12, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.2);
+    }
+  } catch {
+    // AudioContext may be restricted by autoplay policy until user interaction
+  }
+}
+
 const DEFAULT_ROOM = "general";
+const ORIGINAL_TITLE = "Vortex - Real-time Chat";
 
 export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
   const [messagesByRoom, setMessagesByRoom] = useState<Record<string, Message[]>>({});
   const [connected, setConnected] = useState(false);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [servers, setServers] = useState<Server[]>([]);
+  const [activeServer, setActiveServer] = useState<Server | null>(null);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [activeChannel, setActiveChannel] = useState(DEFAULT_ROOM);
   const [onlineUsers, setOnlineUsers] = useState<PresenceUser[]>([]);
   const [typingByRoom, setTypingByRoom] = useState<Record<string, string[]>>({});
   const [loadingAuth, setLoadingAuth] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>("default");
 
   const socketRef = useRef<Socket | null>(null);
   const tokenRef = useRef<string | null>(null);
+  const currentUserRef = useRef<CurrentUser | null>(null);
   const activeRoomRef = useRef(DEFAULT_ROOM);
+  const activeServerRef = useRef<Server | null>(null);
   const lastTypingSentRef = useRef(0);
   const typingTimersRef = useRef<Record<string, number>>({});
+  const unreadCountRef = useRef(0);
+  const titleIntervalRef = useRef<number | null>(null);
+
+  currentUserRef.current = currentUser;
+  activeServerRef.current = activeServer;
 
   const baseUrl = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:5000";
+
+  const clearTitleFlash = useCallback(() => {
+    unreadCountRef.current = 0;
+    if (titleIntervalRef.current) {
+      clearInterval(titleIntervalRef.current);
+      titleIntervalRef.current = null;
+    }
+    if (typeof document !== "undefined") {
+      document.title = ORIGINAL_TITLE;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && "Notification" in window) {
+      setNotificationPermission(Notification.permission);
+    }
+    const onVisibilityOrFocus = () => {
+      if (typeof document !== "undefined" && !document.hidden) {
+        clearTitleFlash();
+      }
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("focus", onVisibilityOrFocus);
+      document.addEventListener("visibilitychange", onVisibilityOrFocus);
+    }
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("focus", onVisibilityOrFocus);
+        document.removeEventListener("visibilitychange", onVisibilityOrFocus);
+      }
+      if (titleIntervalRef.current) {
+        clearInterval(titleIntervalRef.current);
+      }
+    };
+  }, [clearTitleFlash]);
+
+  const requestNotificationPermission = useCallback(async () => {
+    if (typeof window !== "undefined" && "Notification" in window) {
+      try {
+        const perm = await Notification.requestPermission();
+        setNotificationPermission(perm);
+      } catch {
+        // ignore
+      }
+    }
+  }, []);
 
   const fetchHistory = useCallback(
     async (roomId: string, token: string) => {
@@ -110,16 +227,36 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
   );
 
   const fetchChannels = useCallback(
-    async (token: string) => {
+    async (serverSlug: string, token: string): Promise<Channel[]> => {
       try {
-        const res = await fetch(`${baseUrl}/channels`, {
+        const res = await fetch(`${baseUrl}/channels?serverSlug=${encodeURIComponent(serverSlug)}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!res.ok) throw new Error("Failed to load channels");
         const data = (await res.json()) as { channels: Channel[] };
         setChannels(data.channels);
+        return data.channels;
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load channels");
+        return [];
+      }
+    },
+    [baseUrl]
+  );
+
+  const fetchServers = useCallback(
+    async (token: string): Promise<Server[]> => {
+      try {
+        const res = await fetch(`${baseUrl}/servers`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error("Failed to load servers");
+        const data = (await res.json()) as { servers: Server[] };
+        setServers(data.servers);
+        return data.servers;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load servers");
+        return [];
       }
     },
     [baseUrl]
@@ -158,8 +295,21 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
 
       _socket.on("connect", () => {
         setConnected(true);
-        fetchChannels(token).catch(() => undefined);
-        fetchHistory(DEFAULT_ROOM, token).catch(() => undefined);
+        fetchServers(token)
+          .then(async (srvList) => {
+            const initialServer =
+              srvList.find((s) => s.slug === "vortex-main") || srvList[0] || null;
+            if (initialServer) {
+              setActiveServer(initialServer);
+              activeServerRef.current = initialServer;
+              const chList = await fetchChannels(initialServer.slug, token);
+              const firstCh = chList[0]?.slug || DEFAULT_ROOM;
+              setActiveChannel(firstCh);
+              activeRoomRef.current = firstCh;
+              fetchHistory(firstCh, token).catch(() => undefined);
+            }
+          })
+          .catch(() => undefined);
       });
 
       _socket.on("disconnect", () => setConnected(false));
@@ -167,7 +317,50 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
 
       _socket.on("message", (raw: string) => {
         try {
-          upsertMessage(JSON.parse(raw) as Message);
+          const msg = JSON.parse(raw) as Message;
+          upsertMessage(msg);
+
+          // Handle background notification if tab is in background / minimized
+          if (typeof document !== "undefined" && document.hidden) {
+            const isOwn = currentUserRef.current && msg.userId === currentUserRef.current.id;
+            if (!isOwn) {
+              const myUsername = currentUserRef.current?.username?.toLowerCase();
+              const isMention = Boolean(
+                myUsername && msg.text.toLowerCase().includes(`@${myUsername}`)
+              );
+
+              // 1. Play Neo-Brutalist Audio Chime
+              playNeoChime(isMention);
+
+              // 2. Flash Document Title
+              unreadCountRef.current += 1;
+              const count = unreadCountRef.current;
+              const badge = isMention ? `[@ MENTION]` : `(${count}) [TRANSMISSION]`;
+
+              if (titleIntervalRef.current) clearInterval(titleIntervalRef.current);
+              let showNotice = true;
+              document.title = `${badge} Vortex`;
+              titleIntervalRef.current = window.setInterval(() => {
+                showNotice = !showNotice;
+                document.title = showNotice ? `${badge} Vortex` : ORIGINAL_TITLE;
+              }, 1000);
+
+              // 3. Trigger Desktop Notification
+              if ("Notification" in window && Notification.permission === "granted") {
+                try {
+                  const title = isMention
+                    ? `[@${msg.username} mentioned you in #${msg.roomId}]`
+                    : `[#${msg.roomId}] ${msg.username}`;
+                  new Notification(title, {
+                    body: msg.text.length > 120 ? `${msg.text.slice(0, 117)}...` : msg.text,
+                    icon: "/vortex-logo.png",
+                  });
+                } catch {
+                  // Ignore notification error
+                }
+              }
+            }
+          }
         } catch {
           // ignore malformed frames
         }
@@ -180,10 +373,13 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
       });
 
       _socket.on("channel:created", (newCh: Channel) => {
-        setChannels((prev) => {
-          if (prev.some((c) => c.slug === newCh.slug)) return prev;
-          return [...prev, { ...newCh, isMember: !newCh.isPrivate }];
-        });
+        const currentServer = activeServerRef.current;
+        if (!newCh.serverSlug || !currentServer || newCh.serverSlug === currentServer.slug) {
+          setChannels((prev) => {
+            if (prev.some((c) => c.slug === newCh.slug)) return prev;
+            return [...prev, { ...newCh, isMember: !newCh.isPrivate }];
+          });
+        }
       });
 
       _socket.on("typing", (payload: { roomId: string; username: string; typing: boolean }) => {
@@ -214,13 +410,14 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
 
       socketRef.current = _socket;
     },
-    [baseUrl, fetchChannels, fetchHistory]
+    [baseUrl, fetchChannels, fetchHistory, fetchServers]
   );
 
   // Auto-login from saved token on mount
   useEffect(() => {
     try {
-      const savedToken = typeof window !== "undefined" ? localStorage.getItem("vortex_token") : null;
+      const savedToken =
+        typeof window !== "undefined" ? localStorage.getItem("vortex_token") : null;
       if (!savedToken) {
         setLoadingAuth(false);
         return;
@@ -231,7 +428,7 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
       const timer = setTimeout(() => {
         controller.abort();
         setLoadingAuth(false);
-      }, 1500);
+      }, 2000);
 
       fetch(`${baseUrl}/auth/me`, {
         headers: { Authorization: `Bearer ${savedToken}` },
@@ -314,15 +511,131 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
     [baseUrl, initSocket]
   );
 
+  const switchServer = useCallback(
+    async (serverSlug: string) => {
+      const targetServer = servers.find((s) => s.slug === serverSlug);
+      if (!targetServer) return;
+      setActiveServer(targetServer);
+      activeServerRef.current = targetServer;
+
+      const token = tokenRef.current;
+      if (token) {
+        const chList = await fetchChannels(targetServer.slug, token);
+        if (chList.length > 0 && chList[0]) {
+          const firstCh = chList[0].slug;
+          setActiveChannel(firstCh);
+          activeRoomRef.current = firstCh;
+          const s = socketRef.current;
+          if (s && s.connected) {
+            s.emit("channel:join", { slug: firstCh });
+          }
+          fetchHistory(firstCh, token).catch(() => undefined);
+        } else {
+          setChannels([]);
+        }
+      }
+    },
+    [baseUrl, fetchChannels, fetchHistory, servers]
+  );
+
+  const createServer = useCallback(
+    async (name: string, description?: string): Promise<Server> => {
+      const token = tokenRef.current;
+      if (!token) throw new Error("Not authenticated");
+
+      const res = await fetch(`${baseUrl}/servers`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ name, description }),
+      });
+
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error || "Failed to create server");
+      }
+
+      const data = (await res.json()) as { server: Server };
+      setServers((prev) => [...prev, data.server]);
+      setActiveServer(data.server);
+      activeServerRef.current = data.server;
+
+      if (token) {
+        const chList = await fetchChannels(data.server.slug, token);
+        const firstCh = data.server.defaultChannelSlug || chList[0]?.slug || DEFAULT_ROOM;
+        setActiveChannel(firstCh);
+        activeRoomRef.current = firstCh;
+        const s = socketRef.current;
+        if (s && s.connected) {
+          s.emit("channel:join", { slug: firstCh });
+        }
+        fetchHistory(firstCh, token).catch(() => undefined);
+      }
+
+      return data.server;
+    },
+    [baseUrl, fetchChannels, fetchHistory]
+  );
+
+  const joinServerByCode = useCallback(
+    async (inviteCode: string): Promise<Server> => {
+      const token = tokenRef.current;
+      if (!token) throw new Error("Not authenticated");
+
+      const res = await fetch(`${baseUrl}/servers/join`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ inviteCode }),
+      });
+
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error || "Failed to join server");
+      }
+
+      const data = (await res.json()) as { server: Server };
+      setServers((prev) => {
+        if (prev.some((s) => s.id === data.server.id)) return prev;
+        return [...prev, data.server];
+      });
+      setActiveServer(data.server);
+      activeServerRef.current = data.server;
+
+      if (token) {
+        const chList = await fetchChannels(data.server.slug, token);
+        const firstCh = data.server.defaultChannelSlug || chList[0]?.slug || DEFAULT_ROOM;
+        setActiveChannel(firstCh);
+        activeRoomRef.current = firstCh;
+        const s = socketRef.current;
+        if (s && s.connected) {
+          s.emit("channel:join", { slug: firstCh });
+        }
+        fetchHistory(firstCh, token).catch(() => undefined);
+      }
+
+      return data.server;
+    },
+    [baseUrl, fetchChannels, fetchHistory]
+  );
+
   const createChannel = useCallback(
     async (
       name: string,
       slug?: string,
       isPrivate?: boolean,
-      inviteCode?: string
+      inviteCode?: string,
+      serverSlug?: string
     ): Promise<Channel> => {
       const token = tokenRef.current;
       if (!token) throw new Error("Not authenticated");
+
+      const targetServerSlug =
+        serverSlug || activeServerRef.current?.slug || "vortex-main";
 
       const res = await fetch(`${baseUrl}/channels`, {
         method: "POST",
@@ -330,7 +643,13 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ name, slug, isPrivate, inviteCode }),
+        body: JSON.stringify({
+          name,
+          slug,
+          isPrivate,
+          inviteCode,
+          serverSlug: targetServerSlug,
+        }),
       });
 
       if (!res.ok) {
@@ -339,10 +658,12 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
       }
 
       const data = (await res.json()) as { channel: Channel };
-      setChannels((prev) => {
-        if (prev.some((c) => c.slug === data.channel.slug)) return prev;
-        return [...prev, data.channel];
-      });
+      if (!data.channel.serverSlug || data.channel.serverSlug === activeServerRef.current?.slug) {
+        setChannels((prev) => {
+          if (prev.some((c) => c.slug === data.channel.slug)) return prev;
+          return [...prev, data.channel];
+        });
+      }
       return data.channel;
     },
     [baseUrl]
@@ -383,13 +704,16 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
     tokenRef.current = null;
     setCurrentUser(null);
     setMessagesByRoom({});
+    setServers([]);
+    setActiveServer(null);
     setChannels([]);
     setActiveChannel(DEFAULT_ROOM);
     activeRoomRef.current = DEFAULT_ROOM;
     setOnlineUsers([]);
     setTypingByRoom({});
     setError(null);
-  }, []);
+    clearTitleFlash();
+  }, [clearTitleFlash]);
 
   const switchChannel = useCallback(
     (slug: string) => {
@@ -436,6 +760,9 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
       socketRef.current?.disconnect();
       socketRef.current = null;
       Object.values(typingTimersRef.current).forEach((t) => window.clearTimeout(t));
+      if (titleIntervalRef.current) {
+        clearInterval(titleIntervalRef.current);
+      }
     };
   }, []);
 
@@ -448,6 +775,11 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
         register,
         join,
         reset,
+        servers,
+        activeServer,
+        switchServer,
+        createServer,
+        joinServerByCode,
         createChannel,
         joinChannelWithCode,
         sendMessage,
@@ -463,6 +795,8 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
         currentUser,
         error,
         loadingAuth,
+        notificationPermission,
+        requestNotificationPermission,
       }}
     >
       {children}

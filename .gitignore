@@ -41,3 +41,10 @@ yarn-error.log*
 .vscode/
 .idea/
 .env*
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
