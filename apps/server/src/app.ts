@@ -216,19 +216,25 @@ export async function createApp() {
   app.get("/servers", authRequired, async (req, res) => {
     const user = (req as Request & { user: AuthUser }).user;
     try {
-      // Ensure default server exists and user is a member
-      const mainServer = await prisma.server.findUnique({
-        where: { slug: "vortex-main" },
+      // If user has zero servers, auto-enroll them into the default community server
+      const existingCount = await prisma.serverMembership.count({
+        where: { userId: user.userId },
       });
 
-      if (mainServer) {
-        await prisma.serverMembership.upsert({
-          where: {
-            serverId_userId: { serverId: mainServer.id, userId: user.userId },
-          },
-          create: { serverId: mainServer.id, userId: user.userId, role: "MEMBER" },
-          update: {},
+      if (existingCount === 0) {
+        const mainServer = await prisma.server.findUnique({
+          where: { slug: "vortex-main" },
         });
+
+        if (mainServer) {
+          await prisma.serverMembership.upsert({
+            where: {
+              serverId_userId: { serverId: mainServer.id, userId: user.userId },
+            },
+            create: { serverId: mainServer.id, userId: user.userId, role: "MEMBER" },
+            update: {},
+          });
+        }
       }
 
       // Fetch all servers user belongs to or owns
@@ -501,8 +507,15 @@ export async function createApp() {
     const { serverSlug } = req.params;
     const user = (req as Request & { user: AuthUser }).user;
 
-    if (serverSlug === "vortex-main") {
-      res.status(400).json({ error: "Cannot leave the default community lobby [VORTEX // MAIN]" });
+    // Check total server memberships
+    const userMembershipCount = await prisma.serverMembership.count({
+      where: { userId: user.userId },
+    });
+
+    if (userMembershipCount <= 1) {
+      res.status(400).json({
+        error: "Cannot leave your only active server. Join or create another server first.",
+      });
       return;
     }
 

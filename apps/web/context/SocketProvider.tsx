@@ -697,8 +697,9 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
     async (serverSlug: string): Promise<void> => {
       const token = tokenRef.current;
       if (!token) throw new Error("Not authenticated");
-      if (serverSlug === "vortex-main") {
-        throw new Error("Cannot leave the default community server");
+
+      if (servers.length <= 1) {
+        throw new Error("Cannot leave your only server. Join or create another server first.");
       }
 
       const res = await fetch(
@@ -717,14 +718,22 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
       }
 
       // Update servers state
-      setServers((prev) => prev.filter((s) => s.slug !== serverSlug));
+      const remainingServers = servers.filter((s) => s.slug !== serverSlug);
+      setServers(remainingServers);
 
-      // If active server was the left server, switch to vortex-main
+      // If active server was the left server, switch to next available server
       if (activeServerRef.current?.slug === serverSlug) {
-        await switchServer("vortex-main");
+        const nextServer = remainingServers[0];
+        if (nextServer) {
+          await switchServer(nextServer.slug);
+        } else {
+          setActiveServer(null);
+          setChannels([]);
+          setServerMembers([]);
+        }
       }
     },
-    [baseUrl, switchServer]
+    [baseUrl, servers, switchServer]
   );
 
   const createChannel = useCallback(

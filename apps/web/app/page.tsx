@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useRef, useEffect, Fragment } from "react";
-import { useSocket, Channel } from "../context/SocketProvider";
+import { useSocket, Channel, Server } from "../context/SocketProvider";
 import { useVoice } from "../context/VoiceProvider";
 import classes from "./page.module.css";
 
@@ -163,8 +163,10 @@ export default function Page() {
 
   // Leave server modal state
   const [showLeaveConfirmModal, setShowLeaveConfirmModal] = useState(false);
+  const [leaveTargetServer, setLeaveTargetServer] = useState<Server | null>(null);
   const [leaveSubmitting, setLeaveSubmitting] = useState(false);
   const [leaveError, setLeaveError] = useState<string | null>(null);
+  const [showServerMenu, setShowServerMenu] = useState(false);
 
   // Invite code copied feedback state
   const [copiedCode, setCopiedCode] = useState(false);
@@ -271,12 +273,14 @@ export default function Page() {
 
   // Handle Leave / Delete Server
   const handleConfirmLeaveServer = async () => {
-    if (!activeServer) return;
+    const target = leaveTargetServer || activeServer;
+    if (!target) return;
     setLeaveSubmitting(true);
     setLeaveError(null);
     try {
-      await leaveServer(activeServer.slug);
+      await leaveServer(target.slug);
       setShowLeaveConfirmModal(false);
+      setLeaveTargetServer(null);
     } catch (err) {
       setLeaveError(err instanceof Error ? err.message : "Failed to leave server");
     } finally {
@@ -532,7 +536,13 @@ export default function Page() {
                 type="button"
                 className={`${classes.serverBtn} ${isActive ? classes.serverBtnActive : ""}`}
                 onClick={() => switchServer(srv.slug)}
-                title={`${srv.name} [CODE: ${srv.inviteCode}]`}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setLeaveTargetServer(srv);
+                  setLeaveError(null);
+                  setShowLeaveConfirmModal(true);
+                }}
+                title={`${srv.name} [CODE: ${srv.inviteCode}] (Right-click to leave/manage)`}
                 aria-label={`Server: ${srv.name}`}
                 style={!isActive ? { borderLeft: `3.5px solid ${getUserColor(srv.name)}` } : undefined}
               >
@@ -591,11 +601,23 @@ export default function Page() {
 
         {/* Active Server Info & Invite Badge */}
         {activeServer && (
-          <div className={classes.serverMetaBar}>
+          <div className={classes.serverMetaBar} style={{ position: "relative" }}>
             <div className={classes.serverMetaHeader}>
-              <div className={classes.serverMetaName} title={activeServer.name}>
-                {activeServer.name}
-              </div>
+              <button
+                type="button"
+                className={classes.serverMetaNameBtn}
+                onClick={() => setShowServerMenu(!showServerMenu)}
+                title="Toggle server menu"
+                aria-label="Toggle server menu"
+                aria-expanded={showServerMenu}
+              >
+                <span className={classes.serverMetaName} title={activeServer.name}>
+                  {activeServer.name}
+                </span>
+                <span style={{ fontSize: "10px", opacity: 0.7 }}>
+                  {showServerMenu ? "▲" : "▼"}
+                </span>
+              </button>
               <button
                 type="button"
                 className={classes.serverCreateMiniBtn}
@@ -609,6 +631,68 @@ export default function Page() {
                 + SERVER
               </button>
             </div>
+
+            {/* Discord-style Dropdown Menu */}
+            {showServerMenu && (
+              <div className={classes.serverDropdownMenu}>
+                <button
+                  type="button"
+                  className={classes.serverDropdownItem}
+                  onClick={() => {
+                    setShowServerMenu(false);
+                    if (typeof navigator !== "undefined" && navigator.clipboard) {
+                      navigator.clipboard.writeText(activeServer.inviteCode);
+                      setCopiedCode(true);
+                      setTimeout(() => setCopiedCode(false), 2000);
+                    }
+                  }}
+                >
+                  <span>📋</span>
+                  <span>{copiedCode ? "CODE COPIED!" : `COPY INVITE: ${activeServer.inviteCode}`}</span>
+                </button>
+
+                <button
+                  type="button"
+                  className={classes.serverDropdownItem}
+                  onClick={() => {
+                    setShowServerMenu(false);
+                    setShowServerModal(true);
+                    setServerModalError(null);
+                  }}
+                >
+                  <span>➕</span>
+                  <span>CREATE NEW REALM</span>
+                </button>
+
+                <button
+                  type="button"
+                  className={classes.serverDropdownItem}
+                  onClick={() => {
+                    setShowServerMenu(false);
+                    setShowJoinServerModal(true);
+                    setJoinServerModalError(null);
+                  }}
+                >
+                  <span>🧭</span>
+                  <span>JOIN REALM WITH CODE</span>
+                </button>
+
+                <button
+                  type="button"
+                  className={`${classes.serverDropdownItem} ${classes.serverDropdownItemDanger}`}
+                  onClick={() => {
+                    setShowServerMenu(false);
+                    setLeaveTargetServer(activeServer);
+                    setLeaveError(null);
+                    setShowLeaveConfirmModal(true);
+                  }}
+                >
+                  <span>⏻</span>
+                  <span>{activeServer.isOwner ? "DELETE REALM" : "LEAVE REALM"}</span>
+                </button>
+              </div>
+            )}
+
             <div className={classes.serverMetaActionsRow}>
               <button
                 type="button"
@@ -625,20 +709,19 @@ export default function Page() {
                 <span>INVITE: {activeServer.inviteCode}</span>
                 <span>{copiedCode ? "✓" : "📋"}</span>
               </button>
-              {activeServer.slug !== "vortex-main" && (
-                <button
-                  type="button"
-                  className={classes.serverLeaveBtn}
-                  onClick={() => {
-                    setLeaveError(null);
-                    setShowLeaveConfirmModal(true);
-                  }}
-                  title={activeServer.isOwner ? "Delete this server" : "Leave this server"}
-                  aria-label={activeServer.isOwner ? "Delete server" : "Leave server"}
-                >
-                  {activeServer.isOwner ? "⏻ DELETE" : "⏻ LEAVE"}
-                </button>
-              )}
+              <button
+                type="button"
+                className={classes.serverLeaveBtn}
+                onClick={() => {
+                  setLeaveTargetServer(activeServer);
+                  setLeaveError(null);
+                  setShowLeaveConfirmModal(true);
+                }}
+                title={activeServer.isOwner ? "Delete this server" : "Leave this server"}
+                aria-label={activeServer.isOwner ? "Delete server" : "Leave server"}
+              >
+                {activeServer.isOwner ? "⏻ DELETE" : "⏻ LEAVE"}
+              </button>
             </div>
           </div>
         )}
@@ -1459,71 +1542,142 @@ export default function Page() {
       )}
 
       {/* ---------- Modal: Confirm Leave / Delete Server ---------- */}
-      {showLeaveConfirmModal && activeServer && (
-        <div className={classes.modalOverlay} role="dialog" aria-modal="true">
-          <div className={classes.modalWindow}>
-            <div className={classes.windowTitleBar}>
-              <div className={classes.windowTitle}>
-                <span className={classes.windowPrompt}>&gt;_</span> SYS://
-                {activeServer.isOwner ? "DELETE_SERVER" : "LEAVE_SERVER"}
-              </div>
-              <div className={classes.windowControls}>
-                <button
-                  type="button"
-                  className={`${classes.windowBtn} ${classes.windowBtnClose}`}
-                  onClick={() => setShowLeaveConfirmModal(false)}
-                  aria-label="Close modal"
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
+      {showLeaveConfirmModal && (leaveTargetServer || activeServer) && (() => {
+        const target = leaveTargetServer || activeServer!;
+        const isOnlyServer = servers.length <= 1;
 
-            <div className={classes.modalBody}>
-              <div className={classes.modalPrompt}>
-                <span style={{ color: "var(--text-primary)", fontWeight: 800 }}>
-                  {activeServer.isOwner
-                    ? `CONFIRM PERMANENT TERMINATION OF [${activeServer.name.toUpperCase()}]?`
-                    : `CONFIRM DEPARTURE FROM [${activeServer.name.toUpperCase()}]?`}
-                </span>
-                <br />
-                <br />
-                {activeServer.isOwner
-                  ? "WARNING: YOU ARE THE REALM OWNER. TERMINATING THIS SERVER WILL PURGE ALL CHANNELS, MEMBERSHIPS, AND DISCUSSIONS. YOU WILL BE REROUTED TO VORTEX // MAIN."
-                  : "YOU WILL BE DISCONNECTED FROM ALL ITS CHANNELS AND CEASE TO RECEIVE DISPATCHES UNTIL RE-INVITED. YOU WILL BE SAFELY RETURNED TO VORTEX // MAIN."}
-              </div>
-
-              {leaveError && (
-                <div className={classes.errorBanner} role="alert">
-                  <span>[!]</span> {leaveError}
+        return (
+          <div className={classes.modalOverlay} role="dialog" aria-modal="true">
+            <div className={classes.modalWindow}>
+              <div className={classes.windowTitleBar}>
+                <div className={classes.windowTitle}>
+                  <span className={classes.windowPrompt}>&gt;_</span> SYS://
+                  {isOnlyServer
+                    ? "CANNOT_LEAVE_ONLY_REALM"
+                    : target.isOwner
+                    ? "DELETE_SERVER"
+                    : "LEAVE_SERVER"}
                 </div>
-              )}
+                <div className={classes.windowControls}>
+                  <button
+                    type="button"
+                    className={`${classes.windowBtn} ${classes.windowBtnClose}`}
+                    onClick={() => {
+                      setShowLeaveConfirmModal(false);
+                      setLeaveTargetServer(null);
+                    }}
+                    aria-label="Close modal"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
 
-              <div className={classes.channelModalBtns}>
-                <button
-                  type="button"
-                  className={classes.cancelBtn}
-                  onClick={() => setShowLeaveConfirmModal(false)}
-                >
-                  [ CANCEL ]
-                </button>
-                <button
-                  type="button"
-                  className={classes.serverDangerConfirmBtn}
-                  onClick={handleConfirmLeaveServer}
-                  disabled={leaveSubmitting}
-                >
-                  {leaveSubmitting
-                    ? "[ COMMITTING... ]"
-                    : activeServer.isOwner
-                    ? "[ ⏻ TERMINATE SERVER ]"
-                    : "[ ⏻ LEAVE SERVER ]"}
-                </button>
+              <div className={classes.modalBody}>
+                {isOnlyServer ? (
+                  <>
+                    <div className={classes.modalPrompt}>
+                      <span style={{ color: "var(--accent-pink)", fontWeight: 800 }}>
+                        [!] CANNOT DEPART YOUR ONLY REALM [{target.name.toUpperCase()}]
+                      </span>
+                      <br />
+                      <br />
+                      Vortex requires at least one active community or private realm to maintain your operator session.
+                      To depart this realm, join another friend group realm using an invite code or create a new realm first.
+                    </div>
+
+                    <div
+                      className={classes.channelModalBtns}
+                      style={{ marginTop: "16px", display: "flex", gap: "8px", flexWrap: "wrap" }}
+                    >
+                      <button
+                        type="button"
+                        className={classes.confirmBtn}
+                        onClick={() => {
+                          setShowLeaveConfirmModal(false);
+                          setLeaveTargetServer(null);
+                          setShowJoinServerModal(true);
+                          setJoinServerModalError(null);
+                        }}
+                      >
+                        [ 🧭 JOIN ANOTHER REALM ]
+                      </button>
+                      <button
+                        type="button"
+                        className={classes.confirmBtn}
+                        onClick={() => {
+                          setShowLeaveConfirmModal(false);
+                          setLeaveTargetServer(null);
+                          setShowServerModal(true);
+                          setServerModalError(null);
+                        }}
+                      >
+                        [ + CREATE REALM ]
+                      </button>
+                      <button
+                        type="button"
+                        className={classes.cancelBtn}
+                        onClick={() => {
+                          setShowLeaveConfirmModal(false);
+                          setLeaveTargetServer(null);
+                        }}
+                      >
+                        [ CLOSE ]
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className={classes.modalPrompt}>
+                      <span style={{ color: "var(--text-primary)", fontWeight: 800 }}>
+                        {target.isOwner
+                          ? `CONFIRM PERMANENT TERMINATION OF [${target.name.toUpperCase()}]?`
+                          : `CONFIRM DEPARTURE FROM [${target.name.toUpperCase()}]?`}
+                      </span>
+                      <br />
+                      <br />
+                      {target.isOwner
+                        ? "WARNING: YOU ARE THE REALM OWNER. TERMINATING THIS SERVER WILL PURGE ALL CHANNELS, MEMBERSHIPS, AND DISCUSSIONS. YOU WILL BE SAFELY REROUTED TO YOUR REMAINING REALM."
+                        : "YOU WILL BE DISCONNECTED FROM ALL ITS CHANNELS AND CEASE TO RECEIVE DISPATCHES UNTIL RE-INVITED. YOU WILL BE SAFELY REROUTED TO YOUR REMAINING REALM."}
+                    </div>
+
+                    {leaveError && (
+                      <div className={classes.errorBanner} role="alert">
+                        <span>[!]</span> {leaveError}
+                      </div>
+                    )}
+
+                    <div className={classes.channelModalBtns}>
+                      <button
+                        type="button"
+                        className={classes.cancelBtn}
+                        onClick={() => {
+                          setShowLeaveConfirmModal(false);
+                          setLeaveTargetServer(null);
+                        }}
+                      >
+                        [ CANCEL ]
+                      </button>
+                      <button
+                        type="button"
+                        className={classes.serverDangerConfirmBtn}
+                        onClick={handleConfirmLeaveServer}
+                        disabled={leaveSubmitting}
+                      >
+                        {leaveSubmitting
+                          ? "[ COMMITTING... ]"
+                          : target.isOwner
+                          ? "[ ⏻ TERMINATE SERVER ]"
+                          : "[ ⏻ LEAVE SERVER ]"}
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
