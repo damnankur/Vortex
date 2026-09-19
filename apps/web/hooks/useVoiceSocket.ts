@@ -8,6 +8,7 @@ interface VoiceSocketParams {
   webrtcRef: React.MutableRefObject<WebRTCMeshService>;
   localStreamRef: React.MutableRefObject<MediaStream | null>;
   isDeafenedRef: React.MutableRefObject<boolean>;
+  isLiveKitActiveRef?: React.MutableRefObject<boolean>;
   setVoiceCounts: (counts: Record<string, number>) => void;
   setVoiceStates: (states: Record<string, VoiceParticipant[]>) => void;
   setVoiceParticipants: React.Dispatch<React.SetStateAction<VoiceParticipant[]>>;
@@ -18,6 +19,7 @@ export function useVoiceSocket({
   webrtcRef,
   localStreamRef,
   isDeafenedRef,
+  isLiveKitActiveRef,
   setVoiceCounts,
   setVoiceStates,
   setVoiceParticipants,
@@ -26,28 +28,20 @@ export function useVoiceSocket({
     if (!socket) return;
 
     const setupPeerWithNegotiation = (targetSocketId: string): RTCPeerConnection => {
-      const pc = webrtcRef.current.createPeer(
-        targetSocketId,
-        localStreamRef.current,
-        isDeafenedRef.current,
-        (candidate) => {
-          socket.emit("voice:signal", {
-            targetSocketId,
-            signal: { candidate: candidate.toJSON() },
-          });
-        }
-      );
-
-      const isPolite = socket.id ? socket.id.localeCompare(targetSocketId) > 0 : false;
       const neg = webrtcRef.current.getNegotiationState(targetSocketId);
 
-      pc.onnegotiationneeded = async () => {
+      const onNegotiationNeeded = async () => {
         try {
           neg.makingOffer = true;
-          await pc.setLocalDescription();
+          const offer = await pc.createOffer();
+          if (pc.signalingState !== "stable") return;
+          await pc.setLocalDescription(offer);
           socket.emit("voice:signal", {
             targetSocketId,
-            signal: pc.localDescription?.toJSON(),
+            signal: {
+              type: pc.localDescription?.type,
+              sdp: pc.localDescription?.sdp,
+            },
           });
         } catch (err) {
           console.warn("Negotiation error:", err);
@@ -55,6 +49,23 @@ export function useVoiceSocket({
           neg.makingOffer = false;
         }
       };
+
+      const pc = webrtcRef.current.createPeer(
+        targetSocketId,
+        localStreamRef.current,
+        isDeafenedRef.current,
+        (candidate) => {
+          socket.emit("voice:signal", {
+            targetSocketId,
+            signal: {
+              candidate: candidate.candidate,
+              sdpMid: candidate.sdpMid,
+              sdpMLineIndex: candidate.sdpMLineIndex,
+            },
+          });
+        },
+        onNegotiationNeeded
+      );
 
       return pc;
     };
@@ -80,24 +91,29 @@ export function useVoiceSocket({
         return self ? [self, ...remotes] : remotes;
       });
 
-      payload.users.forEach(async (peer) => {
-        const pc = setupPeerWithNegotiation(peer.socketId);
-        const neg = webrtcRef.current.getNegotiationState(peer.socketId);
-        try {
-          neg.makingOffer = true;
-          const offer = await pc.createOffer();
-          if (pc.signalingState !== "stable") return;
-          await pc.setLocalDescription(offer);
-          socket.emit("voice:signal", {
-            targetSocketId: peer.socketId,
-            signal: pc.localDescription?.toJSON(),
-          });
-        } catch (err) {
-          console.warn("Initial offer error:", err);
-        } finally {
-          neg.makingOffer = false;
-        }
-      });
+      if (!isLiveKitActiveRef?.current) {
+        payload.users.forEach(async (peer) => {
+          const pc = setupPeerWithNegotiation(peer.socketId);
+          const neg = webrtcRef.current.getNegotiationState(peer.socketId);
+          try {
+            neg.makingOffer = true;
+            const offer = await pc.createOffer();
+            if (pc.signalingState !== "stable") return;
+            await pc.setLocalDescription(offer);
+            socket.emit("voice:signal", {
+              targetSocketId: peer.socketId,
+              signal: {
+                type: pc.localDescription?.type,
+                sdp: pc.localDescription?.sdp,
+              },
+            });
+          } catch (err) {
+            console.warn("Initial offer error:", err);
+          } finally {
+            neg.makingOffer = false;
+          }
+        });
+      }
     };
 
     const handleUserJoined = (payload: {
@@ -118,15 +134,18 @@ export function useVoiceSocket({
           },
         ];
       });
-      setupPeerWithNegotiation(payload.user.socketId);
+      if (!isLiveKitActiveRef?.current) {
+        setupPeerWithNegotiation(payload.user.socketId);
+      }
     };
 
     const handleSignal = async (payload: {
       senderSocketId: string;
       senderUserId: string;
       senderUsername: string;
-      signal: RTCSessionDescriptionInit | { candidate: RTCIceCandidateInit };
+      signal: any;
     }) => {
+      if (isLiveKitActiveRef?.current || !payload.signal) return;
       let pc = webrtcRef.current.getPeer(payload.senderSocketId);
       if (!pc) {
         pc = setupPeerWithNegotiation(payload.senderSocketId);
@@ -136,8 +155,11 @@ export function useVoiceSocket({
       const neg = webrtcRef.current.getNegotiationState(payload.senderSocketId);
 
       try {
-        if ("type" in payload.signal && payload.signal.type) {
-          const description = new RTCSessionDescription(payload.signal);
+        if (payload.signal.type) {
+          const description = new RTCSessionDescription({
+            type: payload.signal.type,
+            sdp: payload.signal.sdp,
+          });
           const offerCollision =
             description.type === "offer" &&
             (neg.makingOffer || pc.signalingState !== "stable");
@@ -159,19 +181,31 @@ export function useVoiceSocket({
             await pc.setLocalDescription(answer);
             socket.emit("voice:signal", {
               targetSocketId: payload.senderSocketId,
-              signal: pc.localDescription?.toJSON(),
+              signal: {
+                type: pc.localDescription?.type,
+                sdp: pc.localDescription?.sdp,
+              },
             });
           }
-        } else if ("candidate" in payload.signal && payload.signal.candidate) {
+        } else if (payload.signal.candidate !== undefined) {
           try {
+            const cand = payload.signal.candidate;
+            const candidateInit: RTCIceCandidateInit =
+              typeof cand === "string"
+                ? {
+                    candidate: cand,
+                    sdpMid: payload.signal.sdpMid,
+                    sdpMLineIndex: payload.signal.sdpMLineIndex,
+                  }
+                : cand;
             if (pc.remoteDescription) {
-              await pc.addIceCandidate(new RTCIceCandidate(payload.signal.candidate));
+              await pc.addIceCandidate(new RTCIceCandidate(candidateInit));
             } else {
-              webrtcRef.current.queueCandidate(payload.senderSocketId, payload.signal.candidate);
+              webrtcRef.current.queueCandidate(payload.senderSocketId, candidateInit);
             }
           } catch (err) {
             if (!neg.ignoreOffer) {
-              webrtcRef.current.queueCandidate(payload.senderSocketId, payload.signal.candidate);
+              webrtcRef.current.queueCandidate(payload.senderSocketId, payload.signal);
             }
           }
         }
@@ -193,7 +227,9 @@ export function useVoiceSocket({
     };
 
     const handleUserLeft = (p: { channelSlug: string; userId: string; socketId: string }) => {
-      webrtcRef.current.removePeer(p.socketId);
+      if (!isLiveKitActiveRef?.current) {
+        webrtcRef.current.removePeer(p.socketId);
+      }
       setVoiceParticipants((prev) => prev.filter((u) => u.socketId !== p.socketId));
     };
 

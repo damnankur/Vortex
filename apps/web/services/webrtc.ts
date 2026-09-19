@@ -95,7 +95,8 @@ export class WebRTCMeshService {
     targetSocketId: string,
     localStream: MediaStream | null,
     isDeafened: boolean,
-    onIceCandidate: (candidate: RTCIceCandidate) => void
+    onIceCandidate: (candidate: RTCIceCandidate) => void,
+    onNegotiationNeeded?: () => void
   ): RTCPeerConnection {
     if (this.peers.has(targetSocketId)) {
       return this.peers.get(targetSocketId)!;
@@ -103,6 +104,16 @@ export class WebRTCMeshService {
 
     const pc = new RTCPeerConnection(RTC_CONFIG);
     this.peers.set(targetSocketId, pc);
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        onIceCandidate(event.candidate);
+      }
+    };
+
+    if (onNegotiationNeeded) {
+      pc.onnegotiationneeded = onNegotiationNeeded;
+    }
 
     if (localStream) {
       localStream.getAudioTracks().forEach((track) => {
@@ -115,12 +126,6 @@ export class WebRTCMeshService {
         // ignore
       }
     }
-
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        onIceCandidate(event.candidate);
-      }
-    };
 
     pc.ontrack = (event) => {
       const stream =

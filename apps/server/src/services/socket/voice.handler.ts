@@ -10,7 +10,7 @@ export interface VoiceUser {
 }
 
 export class VoiceHandler {
-  // channelSlug -> (userId -> VoiceUser)
+  // channelSlug -> (socketId -> VoiceUser)
   private voiceRooms = new Map<string, Map<string, VoiceUser>>();
   // socketId -> channelSlug
   private socketToVoiceRoom = new Map<string, string>();
@@ -51,7 +51,7 @@ export class VoiceHandler {
     this.socketToVoiceRoom.delete(socket.id);
     const room = this.voiceRooms.get(channelSlug);
     if (room) {
-      room.delete(user.userId);
+      room.delete(socket.id);
       if (room.size === 0) {
         this.voiceRooms.delete(channelSlug);
       }
@@ -64,7 +64,7 @@ export class VoiceHandler {
       socketId: socket.id,
     });
     this.broadcastVoiceCounts(io);
-    logger.info({ userId: user.userId, channelSlug }, "User left voice channel");
+    logger.info({ userId: user.userId, socketId: socket.id, channelSlug }, "User left voice channel");
   }
 
   public registerEvents(
@@ -94,8 +94,8 @@ export class VoiceHandler {
         isMuted: false,
       };
 
-      const existingPeers = Array.from(room.values());
-      room.set(user.userId, voiceUser);
+      const existingPeers = Array.from(room.values()).filter((u) => u.socketId !== socket.id);
+      room.set(socket.id, voiceUser);
       this.socketToVoiceRoom.set(socket.id, channelSlug);
       socket.join(`voice:${channelSlug}`);
 
@@ -110,7 +110,7 @@ export class VoiceHandler {
       });
 
       this.broadcastVoiceCounts(io);
-      logger.info({ userId: user.userId, channelSlug }, "User joined voice channel");
+      logger.info({ userId: user.userId, socketId: socket.id, channelSlug }, "User joined voice channel");
     });
 
     socket.on("voice:signal", (payload: unknown) => {
@@ -138,7 +138,7 @@ export class VoiceHandler {
       if (!channelSlug) return;
 
       const room = this.voiceRooms.get(channelSlug);
-      const voiceUser = room?.get(user.userId);
+      const voiceUser = room?.get(socket.id);
       if (voiceUser) {
         voiceUser.isMuted = parsed.data.isMuted;
       }
@@ -157,4 +157,3 @@ export class VoiceHandler {
     });
   }
 }
-

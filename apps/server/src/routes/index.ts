@@ -5,6 +5,7 @@ import { serverRouter } from "./server.routes";
 import { serverMemberRouter } from "./server-member.routes";
 import { channelRouter } from "./channel.routes";
 import { messageRouter } from "./message.routes";
+import { voiceRouter } from "./voice.routes";
 
 export function registerRoutes(app: Express): void {
   app.use(healthRouter);
@@ -13,4 +14,5 @@ export function registerRoutes(app: Express): void {
   app.use("/servers", serverMemberRouter);
   app.use("/channels", channelRouter);
   app.use("/messages", messageRouter);
+  app.use("/voice", voiceRouter);
 }

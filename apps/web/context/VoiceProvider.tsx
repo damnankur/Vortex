@@ -10,6 +10,7 @@ import React, {
 import { useSocket } from "./SocketProvider";
 import { WebRTCMeshService } from "../services/webrtc";
 import { AudioActivityDetector } from "../services/audioActivity";
+import { LiveKitVoiceService } from "../services/livekit";
 import { useVoiceSocket } from "../hooks/useVoiceSocket";
 
 export interface VoiceParticipant {
@@ -65,19 +66,31 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const localStreamRef = useRef<MediaStream | null>(null);
   const webrtcRef = useRef(new WebRTCMeshService());
+  const livekitRef = useRef(new LiveKitVoiceService());
+  const isLiveKitActiveRef = useRef(false);
   const audioDetectorRef = useRef(new AudioActivityDetector());
   const isDeafenedRef = useRef(isDeafened);
   isDeafenedRef.current = isDeafened;
 
   const unlockAudio = useCallback(() => {
     webrtcRef.current.unlockAudioContext();
+    livekitRef.current.unlockAudio();
     setAutoplayBlocked(false);
   }, []);
 
   useEffect(() => {
-    webrtcRef.current.onAutoplayBlocked = () => {
-      setAutoplayBlocked(true);
-    };
+    webrtcRef.current.onAutoplayBlocked = () => setAutoplayBlocked(true);
+    livekitRef.current.setEvents({
+      onAutoplayBlocked: () => setAutoplayBlocked(true),
+      onSpeakingChanged: (speakerIds) => {
+        setVoiceParticipants((prev) =>
+          prev.map((p) => {
+            if (p.isSelf) return p;
+            return { ...p, isSpeaking: speakerIds.includes(p.userId) };
+          })
+        );
+      },
+    });
   }, []);
 
   const cleanupVoiceSession = useCallback(() => {
@@ -85,6 +98,8 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       localStreamRef.current.getTracks().forEach((t) => t.stop());
       localStreamRef.current = null;
     }
+    livekitRef.current.disconnect();
+    isLiveKitActiveRef.current = false;
     webrtcRef.current.cleanup();
     audioDetectorRef.current.stop();
 
@@ -112,10 +127,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (currentVoiceChannel === channelSlug) return;
       if (currentVoiceChannel) leaveVoice();
 
-      // Synchronously unlock Web Audio context on user click gesture
-      webrtcRef.current.unlockAudioContext();
-      setAutoplayBlocked(false);
-
+      unlockAudio();
       setIsConnecting(true);
       setVoiceError(null);
 
@@ -125,18 +137,17 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
         try {
           stream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-              echoCancellation: true,
-              noiseSuppression: true,
-              autoGainControl: true,
-              sampleRate: 48000,
-              channelCount: 1,
-            },
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
             video: false,
           });
         } catch {
-          listenOnly = true;
-          setVoiceError("Microphone unavailable or blocked. Connected in Listen-Only mode.");
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+          } catch (micErr: unknown) {
+            listenOnly = true;
+            const msg = micErr instanceof Error ? micErr.message : "Microphone access denied.";
+            setVoiceError(`${msg} Connected in Listen-Only mode.`);
+          }
         }
       } else {
         listenOnly = true;
@@ -149,6 +160,34 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         audioDetectorRef.current.start(stream, setSelfSpeaking);
       } else {
         localStreamRef.current = null;
+      }
+
+      // Connect to LiveKit Cloud SFU
+      try {
+        const token = typeof window !== "undefined" ? localStorage.getItem("vortex_token") : null;
+        const baseUrl = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:5000";
+        const res = await fetch(`${baseUrl}/voice/token`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ channelSlug }),
+        });
+
+        if (res.ok) {
+          const data = (await res.json()) as { token: string; url: string };
+          if (data.token && data.url) {
+            await livekitRef.current.connect(data.url, data.token);
+            if (!listenOnly) {
+              await livekitRef.current.setMicrophoneEnabled(true);
+            }
+            isLiveKitActiveRef.current = true;
+          }
+        }
+      } catch (lkErr) {
+        console.warn("LiveKit connection failed, falling back to WebRTC mesh:", lkErr);
+        isLiveKitActiveRef.current = false;
       }
 
       setVoiceParticipants([
@@ -168,7 +207,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       socket.emit("voice:join", { channelSlug });
       setIsConnecting(false);
     },
-    [socket, currentUser, currentVoiceChannel, leaveVoice]
+    [socket, currentUser, currentVoiceChannel, leaveVoice, unlockAudio]
   );
 
   const toggleMute = useCallback(() => {
@@ -176,11 +215,15 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setVoiceError("Microphone input is not available in Listen-Only mode.");
       return;
     }
-    if (!localStreamRef.current) return;
     const nextMuted = !isMuted;
-    localStreamRef.current.getAudioTracks().forEach((t) => {
-      t.enabled = !nextMuted;
-    });
+    if (localStreamRef.current) {
+      localStreamRef.current.getAudioTracks().forEach((t) => {
+        t.enabled = !nextMuted;
+      });
+    }
+    if (isLiveKitActiveRef.current) {
+      livekitRef.current.setMicrophoneEnabled(!nextMuted);
+    }
     setIsMuted(nextMuted);
 
     if (socket) {
@@ -195,6 +238,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const nextDeafened = !isDeafened;
     setIsDeafened(nextDeafened);
     isDeafenedRef.current = nextDeafened;
+    livekitRef.current.setDeafened(nextDeafened);
     webrtcRef.current.setDeafened(nextDeafened);
 
     if (nextDeafened && !isMuted) {
@@ -207,6 +251,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     webrtcRef,
     localStreamRef,
     isDeafenedRef,
+    isLiveKitActiveRef,
     setVoiceCounts,
     setVoiceStates,
     setVoiceParticipants,
