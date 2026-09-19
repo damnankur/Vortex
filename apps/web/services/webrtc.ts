@@ -1,3 +1,5 @@
+import { AudioActivityDetector } from "./audioActivity";
+
 export interface PeerNegotiationState {
   makingOffer: boolean;
   ignoreOffer: boolean;
@@ -31,7 +33,9 @@ export class WebRTCMeshService {
   private audioElements = new Map<string, HTMLAudioElement>();
   private audioCtx: AudioContext | null = null;
   private audioSourceNodes = new Map<string, MediaStreamAudioSourceNode>();
+  private remoteDetectors = new Map<string, AudioActivityDetector>();
   public onAutoplayBlocked?: () => void;
+  public onRemoteSpeaking?: (socketId: string, speaking: boolean) => void;
 
   public unlockAudioContext(): void {
     try {
@@ -136,6 +140,15 @@ export class WebRTCMeshService {
       }
       audio.srcObject = stream;
 
+      // Detect remote speaking activity
+      if (!this.remoteDetectors.has(targetSocketId)) {
+        const detector = new AudioActivityDetector();
+        detector.start(stream, (speaking) => {
+          this.onRemoteSpeaking?.(targetSocketId, speaking);
+        });
+        this.remoteDetectors.set(targetSocketId, detector);
+      }
+
       // Pipe through AudioContext destination if available
       if (this.audioCtx && this.audioCtx.state === "running") {
         try {
@@ -165,10 +178,10 @@ export class WebRTCMeshService {
 
   public async drainCandidates(socketId: string, pc: RTCPeerConnection) {
     const queued = this.pendingCandidates.get(socketId) || [];
+    this.pendingCandidates.delete(socketId);
     for (const cand of queued) {
       await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(() => undefined);
     }
-    this.pendingCandidates.delete(socketId);
   }
 
   public queueCandidate(socketId: string, candidate: RTCIceCandidateInit) {
@@ -201,6 +214,11 @@ export class WebRTCMeshService {
       node.disconnect();
       this.audioSourceNodes.delete(socketId);
     }
+    const detector = this.remoteDetectors.get(socketId);
+    if (detector) {
+      detector.stop();
+      this.remoteDetectors.delete(socketId);
+    }
     this.pendingCandidates.delete(socketId);
   }
 
@@ -217,6 +235,9 @@ export class WebRTCMeshService {
 
     this.audioSourceNodes.forEach((node) => node.disconnect());
     this.audioSourceNodes.clear();
+
+    this.remoteDetectors.forEach((d) => d.stop());
+    this.remoteDetectors.clear();
 
     if (this.audioCtx && this.audioCtx.state !== "closed") {
       this.audioCtx.close().catch(() => undefined);

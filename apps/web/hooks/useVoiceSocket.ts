@@ -155,7 +155,8 @@ export function useVoiceSocket({
           await webrtcRef.current.drainCandidates(payload.senderSocketId, pc);
 
           if (description.type === "offer") {
-            await pc.setLocalDescription();
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
             socket.emit("voice:signal", {
               targetSocketId: payload.senderSocketId,
               signal: pc.localDescription?.toJSON(),
@@ -163,7 +164,11 @@ export function useVoiceSocket({
           }
         } else if ("candidate" in payload.signal && payload.signal.candidate) {
           try {
-            await pc.addIceCandidate(new RTCIceCandidate(payload.signal.candidate));
+            if (pc.remoteDescription) {
+              await pc.addIceCandidate(new RTCIceCandidate(payload.signal.candidate));
+            } else {
+              webrtcRef.current.queueCandidate(payload.senderSocketId, payload.signal.candidate);
+            }
           } catch (err) {
             if (!neg.ignoreOffer) {
               webrtcRef.current.queueCandidate(payload.senderSocketId, payload.signal.candidate);
@@ -173,6 +178,12 @@ export function useVoiceSocket({
       } catch (err) {
         console.warn("Signal error on peer", payload.senderSocketId, err);
       }
+    };
+
+    webrtcRef.current.onRemoteSpeaking = (socketId, speaking) => {
+      setVoiceParticipants((prev) =>
+        prev.map((u) => (u.socketId === socketId ? { ...u, isSpeaking: speaking } : u))
+      );
     };
 
     const handleUserMuted = (p: { userId: string; socketId: string; isMuted: boolean }) => {
