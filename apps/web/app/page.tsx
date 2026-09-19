@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, Fragment } from "react";
 import { useSocket, Channel } from "../context/SocketProvider";
 import { useVoice } from "../context/VoiceProvider";
 import classes from "./page.module.css";
@@ -123,9 +123,11 @@ export default function Page() {
     isConnecting: isVoiceConnecting,
     isMuted: isVoiceMuted,
     isDeafened: isVoiceDeafened,
+    isListenOnly,
     voiceError,
     voiceParticipants,
     voiceCounts,
+    voiceStates,
     joinVoice,
     leaveVoice,
     toggleMute: toggleVoiceMute,
@@ -661,39 +663,55 @@ export default function Page() {
           {channels.map((ch) => {
             const active = ch.slug === activeChannel;
             const isLocked = ch.isPrivate && !ch.isMember;
+            const channelVoiceUsers = voiceStates[ch.slug];
 
             return (
-              <button
-                key={ch.slug}
-                className={`${classes.channel} ${active ? classes.channelActive : ""}`}
-                onClick={() => handleChannelClick(ch)}
-                onMouseEnter={() => prefetchChannel(ch.slug)}
-                aria-current={active ? "true" : undefined}
-              >
-                <span
-                  className={classes.channelHash}
-                  style={{ color: active ? "#000000" : "var(--accent-cyan)" }}
+              <Fragment key={ch.slug}>
+                <button
+                  className={`${classes.channel} ${active ? classes.channelActive : ""}`}
+                  onClick={() => handleChannelClick(ch)}
+                  onMouseEnter={() => prefetchChannel(ch.slug)}
+                  aria-current={active ? "true" : undefined}
                 >
-                  #
-                </span>
-                <span className={classes.channelName}>{ch.name}</span>
-                {ch.isPrivate && (
                   <span
-                    className={classes.channelLockIcon}
-                    title={isLocked ? "Code-protected channel (click to unlock)" : "Private channel (unlocked)"}
+                    className={classes.channelHash}
+                    style={{ color: active ? "#000000" : "var(--accent-cyan)" }}
                   >
-                    {isLocked ? "🔒" : "🔓"}
+                    #
                   </span>
+                  <span className={classes.channelName}>{ch.name}</span>
+                  {ch.isPrivate && (
+                    <span
+                      className={classes.channelLockIcon}
+                      title={isLocked ? "Code-protected channel (click to unlock)" : "Private channel (unlocked)"}
+                    >
+                      {isLocked ? "🔒" : "🔓"}
+                    </span>
+                  )}
+                  {(voiceCounts[ch.slug] || 0) > 0 && (
+                    <span
+                      className={classes.channelVoiceBadge}
+                      title={`${voiceCounts[ch.slug]} operator(s) in voice`}
+                    >
+                      🎙 {voiceCounts[ch.slug]}
+                    </span>
+                  )}
+                </button>
+                {channelVoiceUsers && channelVoiceUsers.length > 0 && (
+                  <div className={classes.sidebarVoiceUsersList}>
+                    {channelVoiceUsers.map((u) => (
+                      <div key={u.userId} className={classes.sidebarVoiceUserItem}>
+                        <span className={classes.sidebarVoiceUserDot} />
+                        <span className={classes.sidebarVoiceUserName}>
+                          {u.username}
+                          {currentUser?.id === u.userId ? " (YOU)" : ""}
+                        </span>
+                        {u.isMuted && <span className={classes.sidebarVoiceMutedTag}>[MUTED]</span>}
+                      </div>
+                    ))}
+                  </div>
                 )}
-                {(voiceCounts[ch.slug] || 0) > 0 && (
-                  <span
-                    className={classes.channelVoiceBadge}
-                    title={`${voiceCounts[ch.slug]} operator(s) in voice`}
-                  >
-                    🎙 {voiceCounts[ch.slug]}
-                  </span>
-                )}
-              </button>
+              </Fragment>
             );
           })}
         </div>
@@ -740,6 +758,15 @@ export default function Page() {
               >
                 🟢 [ VOICE: ACTIVE ]
               </button>
+            ) : isInVoice && currentVoiceChannel ? (
+              <button
+                type="button"
+                className={classes.voiceHeaderConnectedBtn}
+                onClick={() => switchChannel(currentVoiceChannel)}
+                title={`Connected to voice in #${currentVoiceChannel}. Click to switch view.`}
+              >
+                🟢 [ VOICE: #{currentVoiceChannel.toUpperCase()} ]
+              </button>
             ) : (
               <button
                 type="button"
@@ -748,7 +775,7 @@ export default function Page() {
                 disabled={isVoiceConnecting}
                 title={
                   (voiceCounts[activeChannel] || 0) > 0
-                    ? `${voiceCounts[activeChannel]} operators in voice in #${activeChannel}`
+                    ? `${voiceCounts[activeChannel]} operator(s) in voice in #${activeChannel}`
                     : `Start or join voice call in #${activeChannel}`
                 }
               >
@@ -784,86 +811,148 @@ export default function Page() {
           </div>
         </header>
 
-        {/* Active Voice Dock */}
-        {isInVoice && (
-          <div className={classes.voiceDock}>
-            <div className={classes.voiceDockHeader}>
-              <div className={classes.voiceDockInfo}>
-                <span className={classes.voiceLiveDot} />
-                <span className={classes.voiceDockTitle}>
-                  SYS://VOICE_MESH // #{currentVoiceChannel?.toUpperCase()}
+        {/* In-Channel Live Voice Station */}
+        <div
+          className={`${classes.channelVoiceStation} ${
+            isInVoice && currentVoiceChannel === activeChannel ? classes.voiceStationActive : ""
+          }`}
+        >
+          <div className={classes.voiceStationTop}>
+            <div className={classes.voiceStationInfo}>
+              <span
+                className={
+                  isInVoice && currentVoiceChannel === activeChannel
+                    ? classes.voiceLiveDot
+                    : classes.voiceStationRadar
+                }
+              />
+              <div className={classes.voiceStationTitleRow}>
+                <span className={classes.voiceStationBadge}>
+                  {isInVoice && currentVoiceChannel === activeChannel
+                    ? "🟢 VOICE FREQUENCY // ACTIVE LINK"
+                    : "🔊 LIVE VOICE FREQUENCY"}
                 </span>
-                <span className={classes.voiceDockCount}>
-                  [{voiceParticipants.length} {voiceParticipants.length === 1 ? "OPERATOR" : "OPERATORS"}]
+                <span className={classes.voiceStationChannel}>#{activeChannel}</span>
+                <span className={classes.voiceStationCount}>
+                  [{(voiceStates[activeChannel]?.length || (isInVoice && currentVoiceChannel === activeChannel ? voiceParticipants.length : 0))} OPERATOR(S) IN VOICE]
                 </span>
-              </div>
-              <div className={classes.voiceDockControls}>
-                <button
-                  type="button"
-                  className={`${classes.voiceControlBtn} ${
-                    isVoiceMuted ? classes.voiceControlMuted : ""
-                  }`}
-                  onClick={toggleVoiceMute}
-                  title={isVoiceMuted ? "Unmute microphone" : "Mute microphone"}
-                >
-                  {isVoiceMuted ? "🎙 MUTED" : "🎙 MUTE"}
-                </button>
-                <button
-                  type="button"
-                  className={`${classes.voiceControlBtn} ${
-                    isVoiceDeafened ? classes.voiceControlDeafened : ""
-                  }`}
-                  onClick={toggleVoiceDeafen}
-                  title={isVoiceDeafened ? "Undeafen audio" : "Deafen all audio"}
-                >
-                  {isVoiceDeafened ? "🎧 DEAFENED" : "🎧 DEAFEN"}
-                </button>
-                <button
-                  type="button"
-                  className={classes.voiceDisconnectBtn}
-                  onClick={leaveVoice}
-                  title="Disconnect from voice channel"
-                >
-                  [ ⏻ LEAVE ]
-                </button>
+                {isListenOnly && isInVoice && currentVoiceChannel === activeChannel && (
+                  <span
+                    className={classes.listenOnlyTag}
+                    title="Microphone input unavailable. Receiving all audio."
+                  >
+                    🎧 LISTEN-ONLY
+                  </span>
+                )}
               </div>
             </div>
 
-            {voiceError && (
-              <div className={classes.voiceDockError}>
-                <span>[!]</span> {voiceError}
-              </div>
-            )}
-
-            <div className={classes.voiceParticipantsList}>
-              {voiceParticipants.map((participant) => (
-                <div
-                  key={participant.socketId || participant.userId}
-                  className={`${classes.voiceParticipantCard} ${
-                    participant.isSpeaking ? classes.voiceSpeaking : ""
-                  }`}
-                >
-                  <div
-                    className={classes.voiceParticipantAvatar}
-                    style={avatarStyle(participant.username)}
+            <div className={classes.voiceStationActions}>
+              {isInVoice && currentVoiceChannel === activeChannel ? (
+                <>
+                  <button
+                    type="button"
+                    className={`${classes.voiceControlBtn} ${
+                      isVoiceMuted ? classes.voiceControlMuted : ""
+                    }`}
+                    onClick={toggleVoiceMute}
+                    title={
+                      isListenOnly
+                        ? "Microphone input unavailable"
+                        : isVoiceMuted
+                        ? "Unmute microphone"
+                        : "Mute microphone"
+                    }
                   >
-                    {participant.username.charAt(0).toUpperCase()}
-                    {participant.isSpeaking && <span className={classes.voiceHaloRing} />}
-                  </div>
-                  <div className={classes.voiceParticipantMeta}>
-                    <span className={classes.voiceParticipantName}>
-                      {participant.username}
-                      {participant.isSelf ? " (YOU)" : ""}
-                    </span>
-                    {participant.isMuted && (
-                      <span className={classes.voiceMutedBadge}>MUTED</span>
-                    )}
-                  </div>
-                </div>
-              ))}
+                    {isListenOnly ? "🎧 LISTEN ONLY" : isVoiceMuted ? "🎙 MUTED" : "🎙 MUTE"}
+                  </button>
+                  <button
+                    type="button"
+                    className={`${classes.voiceControlBtn} ${
+                      isVoiceDeafened ? classes.voiceControlDeafened : ""
+                    }`}
+                    onClick={toggleVoiceDeafen}
+                    title={isVoiceDeafened ? "Undeafen audio" : "Deafen all incoming audio"}
+                  >
+                    {isVoiceDeafened ? "🎧 DEAFENED" : "🎧 DEAFEN"}
+                  </button>
+                  <button
+                    type="button"
+                    className={classes.voiceDisconnectBtn}
+                    onClick={leaveVoice}
+                    title="Disconnect from voice channel"
+                  >
+                    [ ⏻ LEAVE VOICE ]
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className={classes.voiceJoinChannelBtn}
+                  onClick={() => joinVoice(activeChannel)}
+                  disabled={isVoiceConnecting}
+                  title="Connect to voice mesh inside this channel"
+                >
+                  🎙 {isVoiceConnecting
+                    ? "CONNECTING..."
+                    : (voiceCounts[activeChannel] || 0) > 0
+                    ? `JOIN VOICE (${voiceCounts[activeChannel]} ACTIVE)`
+                    : "JOIN VOICE CALL"}
+                </button>
+              )}
             </div>
           </div>
-        )}
+
+          {/* Connected participants in this channel */}
+          {(() => {
+            const activeVoiceUsers = voiceStates[activeChannel];
+            const hasUsers = (activeVoiceUsers && activeVoiceUsers.length > 0) ||
+              (isInVoice && currentVoiceChannel === activeChannel);
+            if (!hasUsers) return null;
+
+            const participantsToShow = isInVoice && currentVoiceChannel === activeChannel
+              ? voiceParticipants
+              : (activeVoiceUsers || []);
+
+            return (
+              <div className={classes.voiceParticipantsGrid}>
+                {participantsToShow.map((participant) => (
+                  <div
+                    key={participant.socketId || participant.userId}
+                    className={`${classes.voiceParticipantCard} ${
+                      participant.isSpeaking ? classes.voiceSpeaking : ""
+                    }`}
+                  >
+                    <div
+                      className={classes.voiceParticipantAvatar}
+                      style={avatarStyle(participant.username)}
+                    >
+                      {participant.username.charAt(0).toUpperCase()}
+                      {participant.isSpeaking && <span className={classes.voiceHaloRing} />}
+                    </div>
+                    <div className={classes.voiceParticipantMeta}>
+                      <span className={classes.voiceParticipantName}>
+                        {participant.username}
+                        {participant.isSelf || currentUser?.id === participant.userId ? " (YOU)" : ""}
+                      </span>
+                      {participant.isMuted ? (
+                        <span className={classes.voiceMutedBadge}>MUTED</span>
+                      ) : (
+                        <span style={{ fontSize: "10px", color: "#00FF66", fontWeight: 800 }}>LIVE</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+
+          {voiceError && (
+            <div className={classes.voiceDockError}>
+              <span>[!]</span> {voiceError}
+            </div>
+          )}
+        </div>
 
         <div className={classes.messages} role="log" aria-live="polite" aria-label="Chat messages">
           {messages.length === 0 ? (

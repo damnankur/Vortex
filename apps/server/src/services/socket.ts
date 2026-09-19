@@ -120,8 +120,19 @@ export class SocketService {
     return counts;
   }
 
+  private getVoiceState(): Record<string, VoiceUser[]> {
+    const state: Record<string, VoiceUser[]> = {};
+    for (const [channelSlug, users] of this.voiceRooms.entries()) {
+      if (users.size > 0) {
+        state[channelSlug] = Array.from(users.values());
+      }
+    }
+    return state;
+  }
+
   private broadcastVoiceCounts() {
     this._io.emit("voice:counts", this.getVoiceCounts());
+    this._io.emit("voice:state", this.getVoiceState());
   }
 
   private handleLeaveVoice(socket: Socket, user: { userId: string; username: string }) {
@@ -249,6 +260,7 @@ export class SocketService {
 
       // ---------- Voice Calling WebRTC Signaling ----------
       socket.emit("voice:counts", this.getVoiceCounts());
+      socket.emit("voice:state", this.getVoiceState());
 
       socket.on("voice:join", (payload: unknown) => {
         const parsed = z
@@ -331,6 +343,7 @@ export class SocketService {
           socketId: socket.id,
           isMuted: parsed.data.isMuted,
         });
+        this.broadcastVoiceCounts();
       });
 
       socket.on("voice:leave", () => {

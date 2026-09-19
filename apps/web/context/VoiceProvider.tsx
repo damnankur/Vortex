@@ -24,9 +24,11 @@ export interface IVoiceContext {
   isConnecting: boolean;
   isMuted: boolean;
   isDeafened: boolean;
+  isListenOnly: boolean;
   voiceError: string | null;
   voiceParticipants: VoiceParticipant[];
   voiceCounts: Record<string, number>;
+  voiceStates: Record<string, VoiceParticipant[]>;
   joinVoice: (channelSlug: string) => Promise<void>;
   leaveVoice: () => void;
   toggleMute: () => void;
@@ -56,14 +58,17 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isConnecting, setIsConnecting] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isDeafened, setIsDeafened] = useState(false);
+  const [isListenOnly, setIsListenOnly] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [voiceParticipants, setVoiceParticipants] = useState<VoiceParticipant[]>([]);
   const [voiceCounts, setVoiceCounts] = useState<Record<string, number>>({});
+  const [voiceStates, setVoiceStates] = useState<Record<string, VoiceParticipant[]>>({});
   const [selfSpeaking, setSelfSpeaking] = useState(false);
 
   // References to WebRTC components
   const localStreamRef = useRef<MediaStream | null>(null);
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const pendingCandidatesRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
   const audioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -100,9 +105,11 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       audioContextRef.current = null;
     }
 
+    pendingCandidatesRef.current.clear();
     setVoiceParticipants([]);
     setCurrentVoiceChannel(null);
     setIsConnecting(false);
+    setIsListenOnly(false);
     setSelfSpeaking(false);
   }, []);
 
@@ -166,11 +173,17 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const pc = new RTCPeerConnection(RTC_CONFIG);
       peersRef.current.set(targetSocketId, pc);
 
-      // Attach local stream tracks
+      // Attach local stream tracks, or configure recvonly for listen-only mode
       if (localStreamRef.current) {
         localStreamRef.current.getAudioTracks().forEach((track) => {
           pc.addTrack(track, localStreamRef.current!);
         });
+      } else {
+        try {
+          pc.addTransceiver("audio", { direction: "recvonly" });
+        } catch {
+          // ignore
+        }
       }
 
       // Handle ICE Candidates
@@ -239,48 +252,62 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setIsConnecting(true);
       setVoiceError(null);
 
-      try {
-        // Request microphone access
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          },
-          video: false,
-        });
+      let stream: MediaStream | null = null;
+      let listenOnly = false;
 
+      // Request microphone access with graceful fallback to listen-only
+      if (
+        typeof navigator !== "undefined" &&
+        navigator.mediaDevices &&
+        typeof navigator.mediaDevices.getUserMedia === "function"
+      ) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            },
+            video: false,
+          });
+        } catch (err: unknown) {
+          console.warn("Microphone access failed, connecting in listen-only mode:", err);
+          listenOnly = true;
+          setVoiceError("Microphone unavailable or blocked. Connected in Listen-Only mode.");
+        }
+      } else {
+        listenOnly = true;
+        setVoiceError("Microphone not supported on this device/connection. Connected in Listen-Only mode.");
+      }
+
+      setIsListenOnly(listenOnly);
+
+      if (stream) {
         localStreamRef.current = stream;
         setupVoiceActivityDetection(stream);
-
-        // Add self to voice participants
-        setVoiceParticipants([
-          {
-            userId: currentUser.id,
-            username: currentUser.username,
-            socketId: socket.id || "",
-            isMuted: false,
-            isSpeaking: false,
-            isSelf: true,
-          },
-        ]);
-
-        setCurrentVoiceChannel(channelSlug);
-        setIsMuted(false);
-        setIsDeafened(false);
-
-        // Notify server that we're joining voice in this channel
-        socket.emit("voice:join", { channelSlug });
-      } catch (err: unknown) {
-        const message =
-          err instanceof Error
-            ? err.message
-            : "Could not access microphone. Please verify browser permissions.";
-        setVoiceError(message);
-        cleanupVoiceSession();
-      } finally {
-        setIsConnecting(false);
+      } else {
+        localStreamRef.current = null;
       }
+
+      // Add self to voice participants
+      setVoiceParticipants([
+        {
+          userId: currentUser.id,
+          username: currentUser.username,
+          socketId: socket.id || "",
+          isMuted: listenOnly,
+          isSpeaking: false,
+          isSelf: true,
+        },
+      ]);
+
+      setCurrentVoiceChannel(channelSlug);
+      setIsMuted(listenOnly);
+      setIsDeafened(false);
+
+      // Notify server that we're joining voice in this channel
+      socket.emit("voice:join", { channelSlug });
+      setIsConnecting(false);
     },
     [
       socket,
@@ -288,12 +315,15 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       currentVoiceChannel,
       leaveVoice,
       setupVoiceActivityDetection,
-      cleanupVoiceSession,
     ]
   );
 
   // Toggle Mute
   const toggleMute = useCallback(() => {
+    if (isListenOnly) {
+      setVoiceError("Microphone input is not available in Listen-Only mode.");
+      return;
+    }
     if (!localStreamRef.current) return;
     const nextMuted = !isMuted;
     localStreamRef.current.getAudioTracks().forEach((t) => {
@@ -308,7 +338,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setVoiceParticipants((prev) =>
       prev.map((p) => (p.isSelf ? { ...p, isMuted: nextMuted } : p))
     );
-  }, [isMuted, socket]);
+  }, [isListenOnly, isMuted, socket]);
 
   // Toggle Deafen
   const toggleDeafen = useCallback(() => {
@@ -420,6 +450,13 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       try {
         if ("type" in signal && signal.type === "offer") {
           await pc.setRemoteDescription(new RTCSessionDescription(signal));
+          // Drain any queued ICE candidates for this sender
+          const queued = pendingCandidatesRef.current.get(senderSocketId) || [];
+          for (const cand of queued) {
+            await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(() => undefined);
+          }
+          pendingCandidatesRef.current.delete(senderSocketId);
+
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
 
@@ -429,12 +466,29 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           });
         } else if ("type" in signal && signal.type === "answer") {
           await pc.setRemoteDescription(new RTCSessionDescription(signal));
+          // Drain any queued ICE candidates for this sender
+          const queued = pendingCandidatesRef.current.get(senderSocketId) || [];
+          for (const cand of queued) {
+            await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(() => undefined);
+          }
+          pendingCandidatesRef.current.delete(senderSocketId);
         } else if ("candidate" in signal && signal.candidate) {
-          await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+          if (pc.remoteDescription) {
+            await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+          } else {
+            const list = pendingCandidatesRef.current.get(senderSocketId) || [];
+            list.push(signal.candidate);
+            pendingCandidatesRef.current.set(senderSocketId, list);
+          }
         }
-      } catch {
-        // Signaling negotiation warning
+      } catch (err) {
+        console.warn("Signaling error:", err);
       }
+    };
+
+    // When voice state across the entire server updates
+    const handleVoiceState = (state: Record<string, VoiceParticipant[]>) => {
+      setVoiceStates(state || {});
     };
 
     // When a participant updates their mute status
@@ -471,6 +525,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
 
     socket.on("voice:counts", handleVoiceCounts);
+    socket.on("voice:state", handleVoiceState);
     socket.on("voice:room-users", handleRoomUsers);
     socket.on("voice:user-joined", handleUserJoined);
     socket.on("voice:signal", handleSignal);
@@ -479,6 +534,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     return () => {
       socket.off("voice:counts", handleVoiceCounts);
+      socket.off("voice:state", handleVoiceState);
       socket.off("voice:room-users", handleRoomUsers);
       socket.off("voice:user-joined", handleUserJoined);
       socket.off("voice:signal", handleSignal);
@@ -518,9 +574,11 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         isConnecting,
         isMuted,
         isDeafened,
+        isListenOnly,
         voiceError,
         voiceParticipants: participantsWithSpeaking,
         voiceCounts,
+        voiceStates,
         joinVoice,
         leaveVoice,
         toggleMute,

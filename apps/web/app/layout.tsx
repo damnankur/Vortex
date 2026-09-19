@@ -15,11 +15,11 @@ export default function RootLayout({
 }): JSX.Element {
   return (
     <html lang="en">
-      <SocketProvider>
-        <VoiceProvider>
-          <body>{children}</body>
-        </VoiceProvider>
-      </SocketProvider>
+      <body>
+        <SocketProvider>
+          <VoiceProvider>{children}</VoiceProvider>
+        </SocketProvider>
+      </body>
     </html>
   );
 }
