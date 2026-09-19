@@ -1,35 +1,37 @@
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,600;0,700;0,800;1,400&family=Space+Grotesk:wght@500;600;700;800&display=swap');
 
-:root {
-  /* Default: Dark Brutalist Theme */
-  --bg-primary: #0a0a0d;
-  --bg-secondary: #131318;
-  --bg-tertiary: #191922;
-  --text-primary: #ffffff;
-  --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
+:root,
+[data-theme="dark"] {
+  /* Vibrant Cyber-Brutalist Dark Theme */
+  --bg-primary: #0b0c14;
+  --bg-secondary: #131524;
+  --bg-tertiary: #191c30;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
   --accent: #ffe600;
-  --accent-hover: #ffd000;
-  --accent-cyan: #00e5ff;
-  --accent-pink: #ff5376;
-  --accent-mint: #00f0a0;
+  --accent-hover: #ffd700;
+  --accent-cyan: #00f0ff;
+  --accent-pink: #ff2e93;
+  --accent-mint: #00ff88;
+  --accent-purple: #b388ff;
   --accent-orange: #ff7700;
-  --success: #00f0a0;
-  --error: #ff4444;
-  --border-color: #2b2b36;
-  --border-thick: 3px solid #2b2b36;
-  --border-mid: 2px solid #2b2b36;
-  --input-bg: #16161f;
-  --msg-own-bg: #1f1e10;
-  --msg-own-border: 2px solid #ffe600;
-  --msg-other-bg: #15151c;
+  --success: #00ff88;
+  --error: #ff3366;
+  --border-color: #272a44;
+  --border-thick: 2.5px solid #272a44;
+  --border-mid: 2px solid #272a44;
+  --input-bg: #121422;
+  --msg-own-bg: #1d1933;
+  --msg-own-border: 2px solid #00f0ff;
+  --msg-other-bg: #141628;
   --shadow-color: #000000;
   --shadow-sm: 2px 2px 0px #000000;
   --shadow-md: 4px 4px 0px #000000;
   --shadow-lg: 6px 6px 0px #000000;
   --shadow-xl: 8px 8px 0px #000000;
-  --hover-bg: #22222d;
-  --grid-dot: rgba(255, 255, 255, 0.12);
+  --hover-bg: #232742;
+  --grid-dot: rgba(0, 240, 255, 0.18);
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --font-sans: 'Space Grotesk', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }

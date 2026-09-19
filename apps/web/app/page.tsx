@@ -24,6 +24,14 @@ function avatarStyle(name: string): React.CSSProperties {
   return { background: color, color: "#000000" };
 }
 
+function getUserColor(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  }
+  return BRUTAL_AVATAR_COLORS[Math.abs(hash) % BRUTAL_AVATAR_COLORS.length] || "#FFE600";
+}
+
 function channelTitle(slug: string): string {
   return slug
     .split("-")
@@ -521,6 +529,7 @@ export default function Page() {
                 onClick={() => switchServer(srv.slug)}
                 title={`${srv.name} [CODE: ${srv.inviteCode}]`}
                 aria-label={`Server: ${srv.name}`}
+                style={!isActive ? { borderLeft: `3.5px solid ${getUserColor(srv.name)}` } : undefined}
               >
                 {serverInitials(srv.name)}
               </button>
@@ -657,7 +666,12 @@ export default function Page() {
                 onClick={() => handleChannelClick(ch)}
                 aria-current={active ? "true" : undefined}
               >
-                <span className={classes.channelHash}>#</span>
+                <span
+                  className={classes.channelHash}
+                  style={{ color: active ? "#000000" : "var(--accent-cyan)" }}
+                >
+                  #
+                </span>
                 <span className={classes.channelName}>{ch.name}</span>
                 {ch.isPrivate && (
                   <span
@@ -702,7 +716,7 @@ export default function Page() {
         <header className={classes.chatHeader}>
           <div className={classes.chatHeaderMain}>
             <div className={classes.chatTitle}>
-              <span className={classes.channelHash}>#</span>
+              <span className={classes.channelHash} style={{ color: "var(--accent)" }}>#</span>
               {channelTitle(activeChannel)}
               {currentActiveRoom?.isPrivate && (
                 <span style={{ fontSize: "14px", marginLeft: "4px" }}>🔒</span>
@@ -883,9 +897,12 @@ export default function Page() {
                     className={`${classes.messageCard} ${isOwn ? classes.messageCardOwn : ""} ${
                       isMentioned ? classes.messageCardMentioned : ""
                     }`}
+                    style={!isOwn ? { borderLeft: `3.5px solid ${getUserColor(name)}` } : undefined}
                   >
                     <div className={classes.messageHeader}>
-                      <span className={classes.messageUser}>{name}</span>
+                      <span className={classes.messageUser} style={{ color: getUserColor(name) }}>
+                        {name}
+                      </span>
                       {isOwn && <span className={classes.messageTag}>YOU</span>}
                       {isMentioned && (
                         <span className={classes.mentionBadge} title="You were mentioned in this transmission">
@@ -952,8 +969,14 @@ export default function Page() {
             const isBot = memberInfo?.role === "BOT";
             return (
               <div key={user.userId} className={classes.member}>
-                <span className={classes.memberSquare} />
-                <span className={classes.memberName}>
+                <span
+                  className={classes.memberSquare}
+                  style={{ background: getUserColor(user.username) }}
+                />
+                <span
+                  className={classes.memberName}
+                  style={{ color: getUserColor(user.username) }}
+                >
                   {user.username}
                   {user.userId === currentUser?.id ? " (YOU)" : ""}
                 </span>
@@ -962,7 +985,7 @@ export default function Page() {
                     style={{
                       fontSize: "9px",
                       fontWeight: 900,
-                      padding: "1px 4px",
+                      padding: "1px 5px",
                       background: "#FFE600",
                       color: "#000000",
                       border: "1px solid #000000",
@@ -977,12 +1000,13 @@ export default function Page() {
                   <span
                     style={{
                       fontSize: "9px",
-                      fontWeight: 800,
-                      padding: "1px 4px",
-                      background: "var(--bg-secondary)",
-                      color: "var(--text-muted)",
-                      border: "1px solid var(--border-color)",
+                      fontWeight: 900,
+                      padding: "1px 5px",
+                      background: "rgba(0, 240, 255, 0.15)",
+                      color: "#00F0FF",
+                      border: "1px solid #00F0FF",
                       marginLeft: "auto",
+                      boxShadow: "1px 1px 0px #000000",
                     }}
                   >
                     BOT
