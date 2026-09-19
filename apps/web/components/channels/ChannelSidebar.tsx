@@ -119,3 +119,4 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
     </aside>
   );
 };
+

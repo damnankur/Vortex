@@ -73,3 +73,4 @@ export function usePresence(socketRef: React.MutableRefObject<Socket | null>) {
     clearPresence,
   };
 }
+

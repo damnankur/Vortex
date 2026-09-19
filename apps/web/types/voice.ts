@@ -27,3 +27,4 @@ export interface VoiceState {
   voiceChannelUsers: Record<string, VoiceUser[]>;
   voiceError: string | null;
 }
+

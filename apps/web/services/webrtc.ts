@@ -1,18 +1,69 @@
+export interface PeerNegotiationState {
+  makingOffer: boolean;
+  ignoreOffer: boolean;
+  isSettingRemoteAnswerPending: boolean;
+}
+
 const RTC_CONFIG: RTCConfiguration = {
   iceServers: [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
-    { urls: "stun:stun2.l.google.com:19302" },
+    { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
+    { urls: "stun:stun.cloudflare.com:3478" },
+    {
+      urls: [
+        "turn:openrelay.metered.ca:80",
+        "turn:openrelay.metered.ca:443",
+        "turn:openrelay.metered.ca:443?transport=tcp",
+        "turns:openrelay.metered.ca:443?transport=tcp",
+      ],
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
   ],
+  iceCandidatePoolSize: 10,
+  bundlePolicy: "max-bundle",
+  rtcpMuxPolicy: "require",
 };
 
 export class WebRTCMeshService {
   private peers = new Map<string, RTCPeerConnection>();
+  private negotiationStates = new Map<string, PeerNegotiationState>();
   private pendingCandidates = new Map<string, RTCIceCandidateInit[]>();
   private audioElements = new Map<string, HTMLAudioElement>();
+  private audioCtx: AudioContext | null = null;
+  private audioSourceNodes = new Map<string, MediaStreamAudioSourceNode>();
+  public onAutoplayBlocked?: () => void;
+
+  public unlockAudioContext(): void {
+    try {
+      if (!this.audioCtx || this.audioCtx.state === "closed") {
+        const AudioCtxClass =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        this.audioCtx = new AudioCtxClass();
+      }
+      if (this.audioCtx.state === "suspended") {
+        this.audioCtx.resume().catch(() => undefined);
+      }
+    } catch {
+      // ignore
+    }
+  }
 
   public getPeer(socketId: string): RTCPeerConnection | undefined {
     return this.peers.get(socketId);
+  }
+
+  public getNegotiationState(socketId: string): PeerNegotiationState {
+    let state = this.negotiationStates.get(socketId);
+    if (!state) {
+      state = {
+        makingOffer: false,
+        ignoreOffer: false,
+        isSettingRemoteAnswerPending: false,
+      };
+      this.negotiationStates.set(socketId, state);
+    }
+    return state;
   }
 
   public createPeer(
@@ -47,25 +98,41 @@ export class WebRTCMeshService {
     };
 
     pc.ontrack = (event) => {
+      const stream = event.streams[0];
+      if (!stream) return;
+
       let audio = this.audioElements.get(targetSocketId);
       if (!audio) {
         audio = document.createElement("audio");
         audio.autoplay = true;
+        (audio as HTMLAudioElement & { playsInline?: boolean }).playsInline = true;
         audio.muted = isDeafened;
         document.body.appendChild(audio);
         this.audioElements.set(targetSocketId, audio);
       }
-      audio.srcObject = event.streams[0] || null;
-      audio.play().catch(() => undefined);
+      audio.srcObject = stream;
+
+      // Ensure AudioContext pipes the stream to speakers
+      if (this.audioCtx && this.audioCtx.state === "running") {
+        try {
+          if (!this.audioSourceNodes.has(targetSocketId)) {
+            const node = this.audioCtx.createMediaStreamSource(stream);
+            node.connect(this.audioCtx.destination);
+            this.audioSourceNodes.set(targetSocketId, node);
+          }
+        } catch {
+          // fallback to audio element
+        }
+      }
+
+      audio.play().catch(() => {
+        this.onAutoplayBlocked?.();
+      });
     };
 
-    pc.onconnectionstatechange = () => {
-      if (
-        pc.connectionState === "disconnected" ||
-        pc.connectionState === "failed" ||
-        pc.connectionState === "closed"
-      ) {
-        this.removePeer(targetSocketId);
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === "failed") {
+        pc.restartIce();
       }
     };
 
@@ -98,11 +165,17 @@ export class WebRTCMeshService {
       pc.close();
       this.peers.delete(socketId);
     }
+    this.negotiationStates.delete(socketId);
     const audio = this.audioElements.get(socketId);
     if (audio) {
       audio.srcObject = null;
       audio.remove();
       this.audioElements.delete(socketId);
+    }
+    const node = this.audioSourceNodes.get(socketId);
+    if (node) {
+      node.disconnect();
+      this.audioSourceNodes.delete(socketId);
     }
     this.pendingCandidates.delete(socketId);
   }
@@ -110,12 +183,21 @@ export class WebRTCMeshService {
   public cleanup() {
     this.peers.forEach((pc) => pc.close());
     this.peers.clear();
+    this.negotiationStates.clear();
 
     this.audioElements.forEach((audio) => {
       audio.srcObject = null;
       audio.remove();
     });
     this.audioElements.clear();
+
+    this.audioSourceNodes.forEach((node) => node.disconnect());
+    this.audioSourceNodes.clear();
+
+    if (this.audioCtx && this.audioCtx.state !== "closed") {
+      this.audioCtx.close().catch(() => undefined);
+      this.audioCtx = null;
+    }
     this.pendingCandidates.clear();
   }
 }

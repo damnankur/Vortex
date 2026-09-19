@@ -164,3 +164,4 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
     </div>
   );
 };
+

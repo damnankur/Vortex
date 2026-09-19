@@ -74,3 +74,4 @@ messageRouter.get("/", authRequired, async (req, res) => {
     res.status(500).json({ error: "failed to load messages" });
   }
 });
+

@@ -29,6 +29,7 @@ export interface IVoiceContext {
   isDeafened: boolean;
   isListenOnly: boolean;
   voiceError: string | null;
+  autoplayBlocked: boolean;
   voiceParticipants: VoiceParticipant[];
   voiceCounts: Record<string, number>;
   voiceStates: Record<string, VoiceParticipant[]>;
@@ -36,6 +37,7 @@ export interface IVoiceContext {
   leaveVoice: () => void;
   toggleMute: () => void;
   toggleDeafen: () => void;
+  unlockAudio: () => void;
 }
 
 const VoiceContext = createContext<IVoiceContext | null>(null);
@@ -55,6 +57,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isDeafened, setIsDeafened] = useState(false);
   const [isListenOnly, setIsListenOnly] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
   const [voiceParticipants, setVoiceParticipants] = useState<VoiceParticipant[]>([]);
   const [voiceCounts, setVoiceCounts] = useState<Record<string, number>>({});
   const [voiceStates, setVoiceStates] = useState<Record<string, VoiceParticipant[]>>({});
@@ -65,6 +68,17 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const audioDetectorRef = useRef(new AudioActivityDetector());
   const isDeafenedRef = useRef(isDeafened);
   isDeafenedRef.current = isDeafened;
+
+  const unlockAudio = useCallback(() => {
+    webrtcRef.current.unlockAudioContext();
+    setAutoplayBlocked(false);
+  }, []);
+
+  useEffect(() => {
+    webrtcRef.current.onAutoplayBlocked = () => {
+      setAutoplayBlocked(true);
+    };
+  }, []);
 
   const cleanupVoiceSession = useCallback(() => {
     if (localStreamRef.current) {
@@ -79,6 +93,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setIsConnecting(false);
     setIsListenOnly(false);
     setSelfSpeaking(false);
+    setAutoplayBlocked(false);
   }, []);
 
   const leaveVoice = useCallback(() => {
@@ -97,6 +112,10 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (currentVoiceChannel === channelSlug) return;
       if (currentVoiceChannel) leaveVoice();
 
+      // Synchronously unlock Web Audio context on user click gesture
+      webrtcRef.current.unlockAudioContext();
+      setAutoplayBlocked(false);
+
       setIsConnecting(true);
       setVoiceError(null);
 
@@ -106,7 +125,13 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
         try {
           stream = await navigator.mediaDevices.getUserMedia({
-            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+              sampleRate: 48000,
+              channelCount: 1,
+            },
             video: false,
           });
         } catch {
@@ -177,7 +202,6 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [isDeafened, isMuted, toggleMute]);
 
-  // Hook handles all socket events for voice
   useVoiceSocket({
     socket,
     webrtcRef,
@@ -217,6 +241,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         isDeafened,
         isListenOnly,
         voiceError,
+        autoplayBlocked,
         voiceParticipants: participantsWithSpeaking,
         voiceCounts,
         voiceStates,
@@ -224,6 +249,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         leaveVoice,
         toggleMute,
         toggleDeafen,
+        unlockAudio,
       }}
     >
       {children}

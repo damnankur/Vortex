@@ -18,11 +18,13 @@ export const ChannelVoiceStation: React.FC<ChannelVoiceStationProps> = ({
     isMuted,
     isDeafened,
     isListenOnly,
+    autoplayBlocked,
     voiceStates,
     joinVoice,
     leaveVoice,
     toggleMute,
     toggleDeafen,
+    unlockAudio,
   } = useVoice();
 
   const isInThisChannelVoice = isInVoice && currentVoiceChannel === activeChannel;
@@ -99,6 +101,15 @@ export const ChannelVoiceStation: React.FC<ChannelVoiceStationProps> = ({
           )}
         </div>
       </div>
+
+      {autoplayBlocked && (
+        <div className={classes.autoplayAlert} onClick={unlockAudio}>
+          <span>⚠️ BROWSER BLOCKED REMOTE AUDIO PLAYBACK</span>
+          <button type="button" className={classes.unlockAudioBtn}>
+            [ 🔊 CLICK TO UNMUTE AUDIO ]
+          </button>
+        </div>
+      )}
 
       {participants.length > 0 && (
         <div className={classes.voiceParticipantsGrid}>

@@ -8,3 +8,4 @@ healthRouter.get("/healthz", (_req, res) => {
 });
 
 healthRouter.get("/metrics", metricsHandler);
+

@@ -198,3 +198,4 @@ serverRouter.post("/join", authRequired, async (req, res) => {
     res.status(500).json({ error: "Failed to join server" });
   }
 });
+

@@ -67,3 +67,4 @@ export const ActiveOperatorsSidebar: React.FC<ActiveOperatorsSidebarProps> = ({
     </aside>
   );
 };
+

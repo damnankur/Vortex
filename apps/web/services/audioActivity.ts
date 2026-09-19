@@ -56,3 +56,4 @@ export class AudioActivityDetector {
     this.analyser = null;
   }
 }
+

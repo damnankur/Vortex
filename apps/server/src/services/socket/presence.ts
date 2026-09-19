@@ -25,3 +25,4 @@ export class PresenceManager {
     io.to(roomId).emit("presence", { roomId, users: this.roster() });
   }
 }
+

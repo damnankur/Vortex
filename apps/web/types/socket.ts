@@ -47,3 +47,4 @@ export interface ISocketContext {
   requestNotificationPermission: () => Promise<void>;
   socket: Socket | null;
 }
+

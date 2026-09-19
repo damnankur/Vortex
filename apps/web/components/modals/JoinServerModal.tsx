@@ -102,3 +102,4 @@ export const JoinServerModal: React.FC<JoinServerModalProps> = ({
     </div>
   );
 };
+
