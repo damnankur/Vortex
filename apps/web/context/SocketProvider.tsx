@@ -76,6 +76,9 @@ interface ISocketContext {
   sendMessage: (text: string) => void;
   emitTyping: (typing: boolean) => void;
   switchChannel: (slug: string) => void;
+  prefetchChannel: (slug: string) => void;
+  channelLoading: boolean;
+  channelLoaded: boolean;
   messages: Message[];
   channels: Channel[];
   activeChannel: string;
@@ -153,10 +156,12 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
   const [activeChannel, setActiveChannel] = useState(DEFAULT_ROOM);
   const [onlineUsers, setOnlineUsers] = useState<PresenceUser[]>([]);
   const [typingByRoom, setTypingByRoom] = useState<Record<string, string[]>>({});
+  const [loadingRooms, setLoadingRooms] = useState<Record<string, boolean>>({});
   const [loadingAuth, setLoadingAuth] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>("default");
   const [socket, setSocket] = useState<Socket | null>(null);
 
+  const inFlightFetchesRef = useRef<Set<string>>(new Set());
   const socketRef = useRef<Socket | null>(null);
   const tokenRef = useRef<string | null>(null);
   const currentUserRef = useRef<CurrentUser | null>(null);
@@ -220,6 +225,10 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
 
   const fetchHistory = useCallback(
     async (roomId: string, token: string) => {
+      if (inFlightFetchesRef.current.has(roomId)) return;
+      inFlightFetchesRef.current.add(roomId);
+      setLoadingRooms((prev) => ({ ...prev, [roomId]: true }));
+
       try {
         const res = await fetch(
           `${baseUrl}/messages?roomId=${encodeURIComponent(roomId)}&limit=50`,
@@ -233,9 +242,22 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
         setMessagesByRoom((prev) => ({ ...prev, [roomId]: data.messages }));
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load messages");
+      } finally {
+        inFlightFetchesRef.current.delete(roomId);
+        setLoadingRooms((prev) => ({ ...prev, [roomId]: false }));
       }
     },
     [baseUrl]
+  );
+
+  const prefetchChannel = useCallback(
+    (slug: string) => {
+      const token = tokenRef.current;
+      if (!token) return;
+      if (inFlightFetchesRef.current.has(slug)) return;
+      fetchHistory(slug, token).catch(() => undefined);
+    },
+    [fetchHistory]
   );
 
   const fetchChannels = useCallback(
@@ -247,13 +269,21 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
         if (!res.ok) throw new Error("Failed to load channels");
         const data = (await res.json()) as { channels: Channel[] };
         setChannels(data.channels);
+
+        // Pre-warm client cache for channels in parallel
+        if (data.channels && data.channels.length > 0) {
+          data.channels.slice(0, 10).forEach((ch) => {
+            fetchHistory(ch.slug, token).catch(() => undefined);
+          });
+        }
+
         return data.channels;
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load channels");
         return [];
       }
     },
-    [baseUrl]
+    [baseUrl, fetchHistory]
   );
 
   const fetchServers = useCallback(
@@ -779,6 +809,8 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
     tokenRef.current = null;
     setCurrentUser(null);
     setMessagesByRoom({});
+    setLoadingRooms({});
+    inFlightFetchesRef.current.clear();
     setServers([]);
     setActiveServer(null);
     setServerMembers([]);
@@ -857,6 +889,8 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
   }, [activeServer, onlineUsers, serverMembers, currentUser]);
 
   const messages = messagesByRoom[activeChannel] || [];
+  const channelLoading = !!loadingRooms[activeChannel];
+  const channelLoaded = activeChannel in messagesByRoom;
 
   return (
     <SocketContext.Provider
@@ -878,6 +912,9 @@ export const SocketProvider: React.FC<{ children?: React.ReactNode }> = ({ child
         sendMessage,
         emitTyping,
         switchChannel,
+        prefetchChannel,
+        channelLoading,
+        channelLoaded,
         messages,
         channels,
         activeChannel,

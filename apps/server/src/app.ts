@@ -7,6 +7,7 @@ import { signToken, verifyToken, hashPassword, verifyPassword, AuthUser } from "
 import { logger } from "./lib/logger";
 import { httpRequests, metricsHandler } from "./lib/metrics";
 import { SocketService } from "./services/socket";
+import cache from "./services/cache";
 
 const allowedOrigins = env.CORS_ORIGINS.split(",").map((s) => s.trim());
 
@@ -851,6 +852,16 @@ export async function createApp() {
         return;
       }
 
+      // Fast-tier Redis / memory cache lookup (when not paginating backwards)
+      const cacheKey = `vortex:channel:${roomId}:messages:${limit}`;
+      if (!hasValidBefore) {
+        const cached = await cache.get<unknown[]>(cacheKey);
+        if (cached) {
+          res.json({ messages: cached, source: "cache" });
+          return;
+        }
+      }
+
       const messages = await prisma.message.findMany({
         where: {
           roomId,
@@ -870,6 +881,11 @@ export async function createApp() {
         text: m.text,
         createdAt: m.createdAt.toISOString(),
       }));
+
+      // Cache the latest messages for this channel
+      if (!hasValidBefore) {
+        cache.set(cacheKey, result, 90).catch(() => undefined);
+      }
 
       res.json({ messages: result });
     } catch (err) {

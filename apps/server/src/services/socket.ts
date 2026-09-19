@@ -8,6 +8,7 @@ import { produceMessage } from "./kafka";
 import { logger } from "../lib/logger";
 import { messagesSent, socketConnections } from "../lib/metrics";
 import prisma from "./prisma";
+import { cache } from "./cache";
 import type { ChatMessage, PresenceUser } from "../types";
 
 const publisher = new Redis({
@@ -218,6 +219,7 @@ export class SocketService {
 
         messagesSent.inc();
         io.to(roomId).emit("message", envelope);
+        cache.invalidateChannel(roomId).catch(() => undefined);
       });
 
       socket.on("typing:start", () => {

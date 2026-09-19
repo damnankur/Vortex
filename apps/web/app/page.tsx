@@ -99,6 +99,9 @@ export default function Page() {
     sendMessage,
     emitTyping,
     switchChannel,
+    prefetchChannel,
+    channelLoading,
+    channelLoaded,
     messages,
     channels,
     activeChannel,
@@ -664,6 +667,7 @@ export default function Page() {
                 key={ch.slug}
                 className={`${classes.channel} ${active ? classes.channelActive : ""}`}
                 onClick={() => handleChannelClick(ch)}
+                onMouseEnter={() => prefetchChannel(ch.slug)}
                 aria-current={active ? "true" : undefined}
               >
                 <span
@@ -863,15 +867,27 @@ export default function Page() {
 
         <div className={classes.messages} role="log" aria-live="polite" aria-label="Chat messages">
           {messages.length === 0 ? (
-            <div className={classes.emptyState}>
-              <div className={classes.emptyBox}>
-                <div className={classes.emptyIcon}>#</div>
-                <div className={classes.emptyTitle}>NO TRANSMISSIONS LOGGED</div>
-                <div className={classes.emptyText}>
-                  Be the first operator to broadcast a message in #{activeChannel}.
+            channelLoading && !channelLoaded ? (
+              <div className={classes.emptyState}>
+                <div className={classes.emptyBox}>
+                  <div className={classes.emptyIcon}>⚡</div>
+                  <div className={classes.emptyTitle}>SYNCING FREQUENCY...</div>
+                  <div className={classes.emptyText}>
+                    Retrieving encrypted messages for #{activeChannel}...
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className={classes.emptyState}>
+                <div className={classes.emptyBox}>
+                  <div className={classes.emptyIcon}>#</div>
+                  <div className={classes.emptyTitle}>NO TRANSMISSIONS LOGGED</div>
+                  <div className={classes.emptyText}>
+                    Be the first operator to broadcast a message in #{activeChannel}.
+                  </div>
+                </div>
+              </div>
+            )
           ) : (
             messages.map((msg) => {
               const isOwn = msg.userId === currentUser?.id;
